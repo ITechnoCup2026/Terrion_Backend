@@ -1,4 +1,6 @@
 .superpowers/
+.claude/
+docs/
 
 # Environment
 .env
