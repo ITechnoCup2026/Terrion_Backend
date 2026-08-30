@@ -1,1 +1,16 @@
 .superpowers/
+
+# Environment
+.env
+
+# Build artifacts
+/bin/
+/tmp/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
