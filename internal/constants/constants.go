@@ -24,3 +24,10 @@ const (
 	OrderSubmitted OrderStatus = "submitted"
 	OrderCompleted OrderStatus = "completed"
 )
+
+const MigrationsPath = "db/migrations"
+
+const (
+	GeneratedPasswordPrefix = "terrion-"
+	GeneratedPasswordBytes  = 6
+)

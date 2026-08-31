@@ -95,6 +95,37 @@ func (c *Client) SignUp(ctx context.Context, email, password string) (SignUpResu
 	}, nil
 }
 
+func (c *Client) CreateUser(ctx context.Context, email, password string) (string, error) {
+	body, err := json.Marshal(map[string]any{
+		"email":         email,
+		"password":      password,
+		"email_confirm": true,
+	})
+	if err != nil {
+		return "", fmt.Errorf("building create user request: %w", err)
+	}
+
+	response, err := c.send(ctx, http.MethodPost,
+		c.URL+constants.GoTrueAdminUsersPath, c.ServiceRoleKey, bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode >= http.StatusBadRequest {
+		return "", authErrorFrom(response)
+	}
+
+	var created signUpUser
+	if err := json.NewDecoder(response.Body).Decode(&created); err != nil {
+		return "", fmt.Errorf("decoding create user response: %w", err)
+	}
+	if created.ID == "" {
+		return "", fmt.Errorf("create user response carries no user")
+	}
+	return created.ID, nil
+}
+
 func (c *Client) DeleteUser(ctx context.Context, userID string) error {
 	response, err := c.send(ctx, http.MethodDelete,
 		c.URL+constants.GoTrueAdminUsersPath+"/"+userID, c.ServiceRoleKey, nil)
