@@ -34,6 +34,9 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 	commodityRepository := &repository.CommodityRepository{}
 	varietyRepository := &repository.VarietyRepository{}
 	calibrationRepository := &repository.CalibrationRepository{}
+	cooperativeRepository := &repository.CooperativeRepository{}
+	referencePriceRepository := &repository.ReferencePriceRepository{}
+	inputOrderRepository := &repository.InputOrderRepository{}
 
 	goTrue := supabase.NewClient(
 		bootstrapConfig.Config.Supabase.URL,
@@ -59,17 +62,24 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 		plotRepository, blockRepository, memberRepository,
 		commodityRepository, varietyRepository, projectionUseCase, weatherUseCase)
 
+	dashboardUseCase := usecase.NewDashboardUseCase(
+		bootstrapConfig.DB, bootstrapConfig.Log,
+		cooperativeRepository, blockRepository, commodityRepository, memberRepository,
+		referencePriceRepository, inputOrderRepository, projectionUseCase)
+
 	authController := http.NewAuthController(authUseCase, bootstrapConfig.Log)
+	dashboardController := http.NewDashboardController(dashboardUseCase, bootstrapConfig.Log)
 	plotController := http.NewPlotController(plotUseCase, bootstrapConfig.Log)
 	weatherController := http.NewWeatherController(weatherUseCase, bootstrapConfig.Log)
 
 	routeConfig := route.RouteConfig{
-		App:               bootstrapConfig.App,
-		AuthController:    authController,
-		PlotController:    plotController,
-		WeatherController: weatherController,
-		AuthUseCase:       authUseCase,
-		CronSecret:        bootstrapConfig.Config.Cron.Secret,
+		App:                 bootstrapConfig.App,
+		AuthController:      authController,
+		DashboardController: dashboardController,
+		PlotController:      plotController,
+		WeatherController:   weatherController,
+		AuthUseCase:         authUseCase,
+		CronSecret:          bootstrapConfig.Config.Cron.Secret,
 	}
 	routeConfig.Setup()
 }
