@@ -10,12 +10,13 @@ import (
 )
 
 type RouteConfig struct {
-	App               *fiber.App
-	AuthController    *http.AuthController
-	PlotController    *http.PlotController
-	WeatherController *http.WeatherController
-	AuthUseCase       *usecase.AuthUseCase
-	CronSecret        string
+	App                 *fiber.App
+	AuthController      *http.AuthController
+	DashboardController *http.DashboardController
+	PlotController      *http.PlotController
+	WeatherController   *http.WeatherController
+	AuthUseCase         *usecase.AuthUseCase
+	CronSecret          string
 }
 
 func (c *RouteConfig) Setup() {
@@ -35,6 +36,7 @@ func (c *RouteConfig) setupAuthenticatedRoutes() {
 	fieldStaff := middleware.RequireRole(constants.RoleKader, constants.RolePengurus)
 
 	c.App.Get("/api/me", auth, c.AuthController.Me)
+	c.App.Get("/api/dashboard", auth, c.DashboardController.Get)
 	c.App.Get("/api/plots", auth, c.PlotController.List)
 	c.App.Get("/api/plots/:id", auth, c.PlotController.Get)
 	c.App.Post("/api/plots", auth, fieldStaff, c.PlotController.Create)

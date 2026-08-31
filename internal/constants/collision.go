@@ -18,3 +18,10 @@ const (
 	RefusedWouldBeInPast  RefusalReason = "would-be-in-the-past"
 	RefusedNoShift        RefusalReason = "no-shift"
 )
+
+const (
+	DefaultHorizonWeeks = 12
+	PileUpMinPlots      = 2
+	UpcomingDays        = 7
+	UpcomingLimit       = 5
+)

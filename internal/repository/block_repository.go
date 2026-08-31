@@ -52,3 +52,16 @@ func (r *BlockRepository) NextOrderIndex(db *gorm.DB, plotID string) (int, error
 	}
 	return *highest + 1, nil
 }
+
+func (r *BlockRepository) FindHarvestedByPlotIDs(
+	db *gorm.DB, plotIDs []string,
+) ([]entity.Block, error) {
+	blocks := []entity.Block{}
+	if len(plotIDs) == 0 {
+		return blocks, nil
+	}
+
+	err := db.Where("plot_id IN ? AND actual_harvest_date IS NOT NULL", plotIDs).
+		Find(&blocks).Error
+	return blocks, err
+}
