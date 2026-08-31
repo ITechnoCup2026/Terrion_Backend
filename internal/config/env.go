@@ -13,8 +13,9 @@ type Config struct {
 		Env  string
 	}
 	Web struct {
-		Port    int
-		Prefork bool
+		Port        int
+		Prefork     bool
+		CorsOrigins string
 	}
 	Log struct {
 		Level int
@@ -47,6 +48,7 @@ func NewConfig() *Config {
 
 	cfg.Web.Port = getEnvAsInt("WEB_PORT", 8080)
 	cfg.Web.Prefork = getEnvAsBool("WEB_PREFORK", false)
+	cfg.Web.CorsOrigins = getEnv("WEB_CORS_ORIGINS", "http://localhost:3000")
 
 	cfg.Log.Level = getEnvAsInt("LOG_LEVEL", 4)
 
