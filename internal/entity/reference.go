@@ -3,7 +3,7 @@ package entity
 import "time"
 
 type Commodity struct {
-	ID        string `gorm:"column:id;primaryKey;default:gen_random_uuid()"`
+	ID        string `gorm:"column:id;primaryKey"`
 	Slug      string `gorm:"column:slug"`
 	Name      string `gorm:"column:name"`
 	SpriteRow int    `gorm:"column:sprite_row"`
@@ -12,7 +12,7 @@ type Commodity struct {
 func (Commodity) TableName() string { return "commodity" }
 
 type Variety struct {
-	ID               string  `gorm:"column:id;primaryKey;default:gen_random_uuid()"`
+	ID               string  `gorm:"column:id;primaryKey"`
 	CommodityID      string  `gorm:"column:commodity_id"`
 	Name             string  `gorm:"column:name"`
 	GddRequirement   float64 `gorm:"column:gdd_requirement"`

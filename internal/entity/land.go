@@ -6,7 +6,7 @@ import (
 )
 
 type Plot struct {
-	ID            string  `gorm:"column:id;primaryKey;default:gen_random_uuid()"`
+	ID            string  `gorm:"column:id;primaryKey"`
 	CooperativeID string  `gorm:"column:cooperative_id"`
 	MemberID      string  `gorm:"column:member_id"`
 	PublicID      string  `gorm:"column:public_id"`
@@ -29,7 +29,7 @@ type Plot struct {
 func (Plot) TableName() string { return "plot" }
 
 type Block struct {
-	ID                  string     `gorm:"column:id;primaryKey;default:gen_random_uuid()"`
+	ID                  string     `gorm:"column:id;primaryKey"`
 	PlotID              string     `gorm:"column:plot_id"`
 	Label               string     `gorm:"column:label"`
 	AreaHa              float64    `gorm:"column:area_ha"`

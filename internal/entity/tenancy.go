@@ -8,7 +8,7 @@ import (
 )
 
 type Cooperative struct {
-	ID             string          `gorm:"column:id;primaryKey;default:gen_random_uuid()"`
+	ID             string          `gorm:"column:id;primaryKey"`
 	Name           string          `gorm:"column:name"`
 	Village        string          `gorm:"column:village"`
 	District       string          `gorm:"column:district"`
@@ -34,7 +34,7 @@ type AppUser struct {
 func (AppUser) TableName() string { return "app_user" }
 
 type Member struct {
-	ID            string    `gorm:"column:id;primaryKey;default:gen_random_uuid()"`
+	ID            string    `gorm:"column:id;primaryKey"`
 	CooperativeID string    `gorm:"column:cooperative_id"`
 	Name          string    `gorm:"column:name"`
 	NIKHash       *string   `gorm:"column:nik_hash"`
