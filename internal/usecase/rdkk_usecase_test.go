@@ -36,8 +36,8 @@ func rdkkFixture(t *testing.T) (*gorm.DB, *entity.AppUser) {
 	}
 
 	rates := []entity.FertiliserRate{
-		{CommodityID: "commodity-1", InputItem: "urea", KgPerHa: 250, Source: "Permentan 40/2007"},
-		{CommodityID: "commodity-1", InputItem: "sp36", KgPerHa: 100, Source: "Permentan 40/2007"},
+		{CommodityID: maizeCommodity, InputItem: "urea", KgPerHa: 250, Source: "Permentan 40/2007"},
+		{CommodityID: maizeCommodity, InputItem: "sp36", KgPerHa: 100, Source: "Permentan 40/2007"},
 	}
 	if err := db.Create(&rates).Error; err != nil {
 		t.Fatalf("seeding fertiliser rates: %v", err)

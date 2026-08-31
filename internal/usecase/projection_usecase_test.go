@@ -22,6 +22,8 @@ var (
 	homeCoop      = "11111111-1111-4111-8111-111111111111"
 	otherCoop     = "22222222-2222-4222-8222-222222222222"
 	homeCell      = weather.GridCell{GridLat: -6.25, GridLng: 107.75}
+
+	maizeCommodity = "44444444-4444-4444-8444-444444444444"
 )
 
 func projectionDB(t *testing.T) *gorm.DB {
@@ -113,7 +115,7 @@ func seedProjectionFixture(t *testing.T) *gorm.DB {
 	seedPlot(t, db, "plot-other", otherCoop, homeCell)
 
 	maize := &entity.Variety{
-		ID: "variety-1", CommodityID: "commodity-1", Name: "Bisi-18",
+		ID: "variety-1", CommodityID: maizeCommodity, Name: "Bisi-18",
 		GddRequirement: 1400, BaseTempC: 10,
 		DaysToHarvestMin: 90, DaysToHarvestMax: 110,
 		YieldPerHaMin: 7, YieldPerHaMax: 9.5,
@@ -128,19 +130,19 @@ func seedProjectionFixture(t *testing.T) *gorm.DB {
 	blocks := []entity.Block{
 		{
 			ID: "block-growing", PlotID: "plot-home", Label: "BLOK A", AreaHa: 1,
-			CommodityID: "commodity-1", VarietyID: "variety-1",
+			CommodityID: maizeCommodity, VarietyID: "variety-1",
 			PlantingDate: agronomy.AddDays(projectionNow, -60),
 		},
 		{
 			ID: "block-harvested", PlotID: "plot-home", Label: "BLOK B", AreaHa: 1, OrderIndex: 1,
-			CommodityID: "commodity-1", VarietyID: "variety-1",
+			CommodityID: maizeCommodity, VarietyID: "variety-1",
 			PlantingDate:      agronomy.AddDays(projectionNow, -200),
 			ActualHarvestDate: &harvestDate,
 			ActualYieldKg:     &yieldKg,
 		},
 		{
 			ID: "block-other-coop", PlotID: "plot-other", Label: "BLOK A", AreaHa: 1,
-			CommodityID: "commodity-1", VarietyID: "variety-1",
+			CommodityID: maizeCommodity, VarietyID: "variety-1",
 			PlantingDate: agronomy.AddDays(projectionNow, -60),
 		},
 	}
@@ -238,7 +240,7 @@ func TestProjectCooperativeMarksABlockWithNoStoredWeatherImplausible(t *testing.
 
 	block := &entity.Block{
 		ID: "block-dry", PlotID: "plot-dry", Label: "BLOK A", AreaHa: 1,
-		CommodityID: "commodity-1", VarietyID: "variety-1",
+		CommodityID: maizeCommodity, VarietyID: "variety-1",
 		PlantingDate: agronomy.AddDays(projectionNow, -60),
 	}
 	if err := db.Create(block).Error; err != nil {

@@ -56,7 +56,7 @@ func plotFixture(t *testing.T) (*gorm.DB, *entity.AppUser) {
 		t.Fatalf("linking member to plot: %v", err)
 	}
 	if err := db.Create(&entity.Commodity{
-		ID: "commodity-1", Slug: "jagung", Name: "Jagung", SpriteRow: 1,
+		ID: maizeCommodity, Slug: "jagung", Name: "Jagung", SpriteRow: 1,
 	}).Error; err != nil {
 		t.Fatalf("seeding commodity: %v", err)
 	}

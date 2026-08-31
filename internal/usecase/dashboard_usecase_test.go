@@ -65,8 +65,8 @@ func TestDashboardLoadReturnsAFullHorizonAndUpcomingRows(t *testing.T) {
 	if len(loaded.Weeks) != constants.DefaultHorizonWeeks {
 		t.Errorf("len(Weeks) = %d, want %d", len(loaded.Weeks), constants.DefaultHorizonWeeks)
 	}
-	if loaded.Commodities["commodity-1"] != "Jagung" {
-		t.Errorf("Commodities = %v, want commodity-1 named Jagung", loaded.Commodities)
+	if loaded.Commodities[maizeCommodity] != "Jagung" {
+		t.Errorf("Commodities = %v, want the maize commodity named Jagung", loaded.Commodities)
 	}
 }
 

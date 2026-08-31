@@ -17,3 +17,9 @@ func (r *CooperativeRepository) FindCapacity(
 	err := db.Where("cooperative_id = ?", cooperativeID).Find(&capacity).Error
 	return capacity, err
 }
+
+func (r *CooperativeRepository) FindAll(db *gorm.DB) ([]entity.Cooperative, error) {
+	cooperatives := []entity.Cooperative{}
+	err := db.Order("name").Find(&cooperatives).Error
+	return cooperatives, err
+}
