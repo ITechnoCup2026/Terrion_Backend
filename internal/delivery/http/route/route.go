@@ -16,6 +16,7 @@ type RouteConfig struct {
 	DashboardController *http.DashboardController
 	PlotController      *http.PlotController
 	RdkkController      *http.RdkkController
+	StaggerController   *http.StaggerController
 	WeatherController   *http.WeatherController
 	AuthUseCase         *usecase.AuthUseCase
 	CronSecret          string
@@ -53,6 +54,8 @@ func (c *RouteConfig) setupAuthenticatedRoutes() {
 		middleware.RequireRole(constants.RoleBuyer), c.CatalogController.CreateRequest)
 	c.App.Patch("/api/supply-requests/:id", auth,
 		middleware.RequireRole(constants.RolePengurus), c.CatalogController.RespondToRequest)
+	c.App.Post("/api/stagger", auth,
+		middleware.RequireRole(constants.RolePengurus), c.StaggerController.Apply)
 }
 
 func (c *RouteConfig) setupCronRoutes() {

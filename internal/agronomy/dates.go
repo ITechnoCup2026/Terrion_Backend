@@ -3,6 +3,7 @@ package agronomy
 import (
 	"fmt"
 	"math"
+	"regexp"
 	"time"
 
 	"terrion-backend/internal/constants"
@@ -49,4 +50,10 @@ func ISOWeekStart(t time.Time) time.Time {
 func ISOWeekKey(t time.Time) string {
 	year, week := t.UTC().ISOWeek()
 	return fmt.Sprintf("%d-W%02d", year, week)
+}
+
+var isoWeekKeyPattern = regexp.MustCompile(`^\d{4}-W\d{2}$`)
+
+func IsISOWeekKey(value string) bool {
+	return isoWeekKeyPattern.MatchString(value)
 }
