@@ -7,7 +7,7 @@ import (
 )
 
 type SupplyContractRequest struct {
-	ID                string                  `gorm:"column:id;primaryKey;default:gen_random_uuid()"`
+	ID                string                  `gorm:"column:id;primaryKey"`
 	CooperativeID     string                  `gorm:"column:cooperative_id"`
 	BuyerID           string                  `gorm:"column:buyer_id"`
 	BuyerName         string                  `gorm:"column:buyer_name"`
@@ -25,7 +25,7 @@ type SupplyContractRequest struct {
 func (SupplyContractRequest) TableName() string { return "supply_contract_request" }
 
 type InputOrder struct {
-	ID            string                `gorm:"column:id;primaryKey;default:gen_random_uuid()"`
+	ID            string                `gorm:"column:id;primaryKey"`
 	CooperativeID string                `gorm:"column:cooperative_id"`
 	SeasonLabel   string                `gorm:"column:season_label"`
 	Status        constants.OrderStatus `gorm:"column:status;type:order_status"`
@@ -35,7 +35,7 @@ type InputOrder struct {
 func (InputOrder) TableName() string { return "input_order" }
 
 type InputOrderLine struct {
-	ID                 string   `gorm:"column:id;primaryKey;default:gen_random_uuid()"`
+	ID                 string   `gorm:"column:id;primaryKey"`
 	InputOrderID       string   `gorm:"column:input_order_id"`
 	Item               string   `gorm:"column:item"`
 	Quantity           float64  `gorm:"column:quantity"`
