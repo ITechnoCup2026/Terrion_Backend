@@ -8,6 +8,10 @@ import (
 )
 
 func NewRedis(cfg *Config, log *logrus.Logger) *redis.Client {
+	if cfg.Redis.URL == "" {
+		log.Fatalf("REDIS_URL is empty: no .env was found from %s up to the module root", workingDirectory())
+	}
+
 	options, err := redis.ParseURL(cfg.Redis.URL)
 	if err != nil {
 		log.Fatalf("failed to parse redis url: %v", err)

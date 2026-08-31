@@ -2,9 +2,12 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/joho/godotenv"
+
+	"terrion-backend/internal/constants"
 )
 
 type Config struct {
@@ -46,7 +49,7 @@ type Config struct {
 }
 
 func NewConfig() *Config {
-	_ = godotenv.Load()
+	loadEnvFile()
 
 	cfg := &Config{}
 
@@ -104,4 +107,27 @@ func getEnvAsBool(key string, fallback bool) bool {
 		}
 	}
 	return fallback
+}
+
+func loadEnvFile() {
+	directory, err := os.Getwd()
+	if err != nil {
+		return
+	}
+
+	for {
+		if _, err := os.Stat(filepath.Join(directory, constants.EnvFileName)); err == nil {
+			_ = godotenv.Load(filepath.Join(directory, constants.EnvFileName))
+			return
+		}
+		if _, err := os.Stat(filepath.Join(directory, constants.ModuleFileName)); err == nil {
+			return
+		}
+
+		parent := filepath.Dir(directory)
+		if parent == directory {
+			return
+		}
+		directory = parent
+	}
 }
