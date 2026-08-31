@@ -1,6 +1,9 @@
 package config
 
-import "github.com/gofiber/fiber/v2"
+import (
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
+)
 
 func NewFiber(cfg *Config) *fiber.App {
 	app := fiber.New(fiber.Config{
@@ -8,6 +11,10 @@ func NewFiber(cfg *Config) *fiber.App {
 		ErrorHandler: NewErrorHandler(),
 		Prefork:      cfg.Web.Prefork,
 	})
+
+	app.Use(cors.New(cors.Config{
+		AllowOrigins: cfg.Web.CorsOrigins,
+	}))
 
 	return app
 }
