@@ -37,6 +37,7 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 	cooperativeRepository := &repository.CooperativeRepository{}
 	referencePriceRepository := &repository.ReferencePriceRepository{}
 	inputOrderRepository := &repository.InputOrderRepository{}
+	fertiliserRateRepository := &repository.FertiliserRateRepository{}
 
 	goTrue := supabase.NewClient(
 		bootstrapConfig.Config.Supabase.URL,
@@ -67,7 +68,13 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 		cooperativeRepository, blockRepository, commodityRepository, memberRepository,
 		referencePriceRepository, inputOrderRepository, projectionUseCase)
 
+	rdkkUseCase := usecase.NewRdkkUseCase(
+		bootstrapConfig.DB, bootstrapConfig.Log,
+		cooperativeRepository, plotRepository, blockRepository, memberRepository,
+		fertiliserRateRepository, inputOrderRepository)
+
 	authController := http.NewAuthController(authUseCase, bootstrapConfig.Log)
+	rdkkController := http.NewRdkkController(rdkkUseCase, bootstrapConfig.Log)
 	dashboardController := http.NewDashboardController(dashboardUseCase, bootstrapConfig.Log)
 	plotController := http.NewPlotController(plotUseCase, bootstrapConfig.Log)
 	weatherController := http.NewWeatherController(weatherUseCase, bootstrapConfig.Log)
@@ -77,6 +84,7 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 		AuthController:      authController,
 		DashboardController: dashboardController,
 		PlotController:      plotController,
+		RdkkController:      rdkkController,
 		WeatherController:   weatherController,
 		AuthUseCase:         authUseCase,
 		CronSecret:          bootstrapConfig.Config.Cron.Secret,

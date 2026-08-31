@@ -14,6 +14,7 @@ type RouteConfig struct {
 	AuthController      *http.AuthController
 	DashboardController *http.DashboardController
 	PlotController      *http.PlotController
+	RdkkController      *http.RdkkController
 	WeatherController   *http.WeatherController
 	AuthUseCase         *usecase.AuthUseCase
 	CronSecret          string
@@ -41,6 +42,9 @@ func (c *RouteConfig) setupAuthenticatedRoutes() {
 	c.App.Get("/api/plots/:id", auth, c.PlotController.Get)
 	c.App.Post("/api/plots", auth, fieldStaff, c.PlotController.Create)
 	c.App.Post("/api/blocks/:id/split", auth, fieldStaff, c.PlotController.SplitBlock)
+	c.App.Get("/api/rdkk", auth, c.RdkkController.Get)
+	c.App.Post("/api/input-orders", auth,
+		middleware.RequireRole(constants.RolePengurus), c.RdkkController.CreateInputOrder)
 }
 
 func (c *RouteConfig) setupCronRoutes() {

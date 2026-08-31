@@ -21,3 +21,16 @@ const (
 	SplitBlockAlreadyGone = "split_block_already_gone"
 	SplitBlockHarvested   = "split_block_harvested"
 )
+
+const (
+	SubsidyCapHa = 2.0
+	KgPerSack    = 50
+)
+
+const (
+	RdkkSeasonDays     = 365
+	RdkkDefaultLabel   = "musim ini"
+	RdkkNothingToOrder = "rdkk_nothing_to_order"
+)
+
+const MemberWithoutName = "Anggota tanpa nama"
