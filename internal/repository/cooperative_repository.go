@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"errors"
+
 	"gorm.io/gorm"
 
 	"terrion-backend/internal/entity"
@@ -22,4 +24,20 @@ func (r *CooperativeRepository) FindAll(db *gorm.DB) ([]entity.Cooperative, erro
 	cooperatives := []entity.Cooperative{}
 	err := db.Order("name").Find(&cooperatives).Error
 	return cooperatives, err
+}
+
+func (r *CooperativeRepository) FindInVillage(
+	db *gorm.DB, village, district string,
+) (*entity.Cooperative, error) {
+	cooperative := new(entity.Cooperative)
+	err := db.Where("village = ? AND district = ?", village, district).
+		Order("name").Take(cooperative).Error
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return cooperative, nil
 }

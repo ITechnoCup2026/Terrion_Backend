@@ -39,6 +39,7 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 	inputOrderRepository := &repository.InputOrderRepository{}
 	fertiliserRateRepository := &repository.FertiliserRateRepository{}
 	supplyRequestRepository := &repository.SupplyRequestRepository{}
+	publicPlotRepository := &repository.PublicPlotRepository{}
 
 	goTrue := supabase.NewClient(
 		bootstrapConfig.Config.Supabase.URL,
@@ -87,7 +88,19 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 		bootstrapConfig.DB, bootstrapConfig.Log, bootstrapConfig.Validate,
 		cooperativeRepository, blockRepository, projectionUseCase)
 
+	publicUseCase := usecase.NewPublicUseCase(
+		bootstrapConfig.DB, bootstrapConfig.Log,
+		publicPlotRepository, plotRepository, blockRepository,
+		commodityRepository, varietyRepository, cooperativeRepository, weatherUseCase)
+
+	atlasUseCase := usecase.NewAtlasUseCase(
+		bootstrapConfig.DB, bootstrapConfig.Log,
+		cooperativeRepository, plotRepository, publicPlotRepository,
+		blockRepository, commodityRepository)
+
 	authController := http.NewAuthController(authUseCase, bootstrapConfig.Log)
+	publicController := http.NewPublicController(
+		publicUseCase, atlasUseCase, bootstrapConfig.Log)
 	staggerController := http.NewStaggerController(staggerUseCase, bootstrapConfig.Log)
 	catalogController := http.NewCatalogController(
 		catalogUseCase, supplyRequestUseCase, bootstrapConfig.Log)
@@ -102,6 +115,7 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 		CatalogController:   catalogController,
 		DashboardController: dashboardController,
 		PlotController:      plotController,
+		PublicController:    publicController,
 		RdkkController:      rdkkController,
 		StaggerController:   staggerController,
 		WeatherController:   weatherController,
