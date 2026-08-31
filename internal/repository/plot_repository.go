@@ -18,3 +18,14 @@ func (r *PlotRepository) FindByCooperativeID(
 		Find(&plots).Error
 	return plots, err
 }
+
+func (r *PlotRepository) FindInCooperative(
+	db *gorm.DB, plotID, cooperativeID string,
+) (*entity.Plot, error) {
+	plot := new(entity.Plot)
+	err := db.Where("id = ? AND cooperative_id = ?", plotID, cooperativeID).Take(plot).Error
+	if err != nil {
+		return nil, err
+	}
+	return plot, nil
+}

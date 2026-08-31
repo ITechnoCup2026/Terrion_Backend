@@ -28,6 +28,12 @@ type BootstrapConfig struct {
 func Bootstrap(bootstrapConfig *BootstrapConfig) {
 	userRepository := &repository.Repository[entity.AppUser]{}
 	weatherRepository := &repository.WeatherRepository{}
+	plotRepository := &repository.PlotRepository{}
+	blockRepository := &repository.BlockRepository{}
+	memberRepository := &repository.MemberRepository{}
+	commodityRepository := &repository.CommodityRepository{}
+	varietyRepository := &repository.VarietyRepository{}
+	calibrationRepository := &repository.CalibrationRepository{}
 
 	goTrue := supabase.NewClient(
 		bootstrapConfig.Config.Supabase.URL,
@@ -43,12 +49,24 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 	weatherUseCase := usecase.NewWeatherUseCase(
 		bootstrapConfig.DB, bootstrapConfig.Log, weatherRepository, weather.NewClient())
 
+	projectionUseCase := usecase.NewProjectionUseCase(
+		bootstrapConfig.DB, bootstrapConfig.Log,
+		plotRepository, blockRepository, varietyRepository, calibrationRepository,
+		weatherUseCase)
+
+	plotUseCase := usecase.NewPlotUseCase(
+		bootstrapConfig.DB, bootstrapConfig.Log, bootstrapConfig.Validate,
+		plotRepository, blockRepository, memberRepository,
+		commodityRepository, varietyRepository, projectionUseCase, weatherUseCase)
+
 	authController := http.NewAuthController(authUseCase, bootstrapConfig.Log)
+	plotController := http.NewPlotController(plotUseCase, bootstrapConfig.Log)
 	weatherController := http.NewWeatherController(weatherUseCase, bootstrapConfig.Log)
 
 	routeConfig := route.RouteConfig{
 		App:               bootstrapConfig.App,
 		AuthController:    authController,
+		PlotController:    plotController,
 		WeatherController: weatherController,
 		AuthUseCase:       authUseCase,
 		CronSecret:        bootstrapConfig.Config.Cron.Secret,
