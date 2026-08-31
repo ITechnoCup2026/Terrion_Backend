@@ -27,3 +27,11 @@ func (r *MemberRepository) FindByNameInCooperative(
 	}
 	return member, nil
 }
+
+func (r *MemberRepository) FindByCooperativeID(
+	db *gorm.DB, cooperativeID string,
+) ([]entity.Member, error) {
+	members := []entity.Member{}
+	err := db.Where("cooperative_id = ?", cooperativeID).Order("name").Find(&members).Error
+	return members, err
+}

@@ -31,6 +31,13 @@ func projectionDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("opening in-memory sqlite: %v", err)
 	}
+
+	pool, err := db.DB()
+	if err != nil {
+		t.Fatalf("reading sqlite connection pool: %v", err)
+	}
+	pool.SetMaxOpenConns(1)
+
 	if err := db.AutoMigrate(
 		&entity.Plot{}, &entity.Block{}, &entity.Variety{}, &entity.Calibration{},
 		&entity.WeatherDaily{}, &entity.WeatherNormal{},

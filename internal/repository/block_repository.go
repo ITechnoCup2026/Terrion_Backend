@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"time"
+
 	"gorm.io/gorm"
 
 	"terrion-backend/internal/entity"
@@ -63,5 +65,19 @@ func (r *BlockRepository) FindHarvestedByPlotIDs(
 
 	err := db.Where("plot_id IN ? AND actual_harvest_date IS NOT NULL", plotIDs).
 		Find(&blocks).Error
+	return blocks, err
+}
+
+func (r *BlockRepository) FindPlantedInSeason(
+	db *gorm.DB, plotIDs []string, from, to time.Time,
+) ([]entity.Block, error) {
+	blocks := []entity.Block{}
+	if len(plotIDs) == 0 {
+		return blocks, nil
+	}
+
+	err := db.Where("plot_id IN ? AND planting_date >= ? AND planting_date <= ?",
+		plotIDs, from, to).
+		Order("plot_id, order_index").Find(&blocks).Error
 	return blocks, err
 }
