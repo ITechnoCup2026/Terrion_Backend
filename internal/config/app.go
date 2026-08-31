@@ -5,12 +5,14 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
+	"github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
 
 type BootstrapConfig struct {
 	DB       *gorm.DB
+	Redis    *redis.Client
 	App      *fiber.App
 	Log      *logrus.Logger
 	Validate *validator.Validate
