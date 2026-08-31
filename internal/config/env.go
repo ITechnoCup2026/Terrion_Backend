@@ -30,6 +30,9 @@ type Config struct {
 		PoolMax      int
 		PoolLifetime int
 	}
+	Redis struct {
+		URL string
+	}
 }
 
 // NewConfig loads .env into the process environment (if present) and builds
@@ -56,6 +59,8 @@ func NewConfig() *Config {
 	cfg.Database.PoolIdle = getEnvAsInt("DB_POOL_IDLE", 10)
 	cfg.Database.PoolMax = getEnvAsInt("DB_POOL_MAX", 100)
 	cfg.Database.PoolLifetime = getEnvAsInt("DB_POOL_LIFETIME", 300)
+
+	cfg.Redis.URL = getEnv("REDIS_URL", "")
 
 	return cfg
 }
