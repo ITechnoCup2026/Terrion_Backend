@@ -62,3 +62,17 @@ type DashboardResponse struct {
 	Upcoming    UpcomingResponse            `json:"upcoming"`
 	Impact      ImpactResponse              `json:"impact"`
 }
+
+type ApplyStaggerRequest struct {
+	ISOWeek     string `json:"iso_week" validate:"required"`
+	CommodityID string `json:"commodity_id" validate:"required,uuid"`
+}
+
+type ApplyStaggerResponse struct {
+	Shifted int `json:"shifted"`
+}
+
+type StaggerRefusalResponse struct {
+	AlreadyPlanted int `json:"already_planted"`
+	WouldBeInPast  int `json:"would_be_in_the_past"`
+}

@@ -53,10 +53,8 @@ type Filters struct {
 	MinTonnes   float64
 }
 
-var (
-	uuidPattern    = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-	isoWeekPattern = regexp.MustCompile(`^\d{4}-W\d{2}$`)
-)
+var uuidPattern = regexp.MustCompile(
+	`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 func ListingID(cooperativeID, commodityID, isoWeek string) string {
 	return strings.Join([]string{cooperativeID, commodityID, isoWeek},
@@ -76,7 +74,7 @@ func ParseListingID(raw string) (ParsedListingID, bool) {
 	if !uuidPattern.MatchString(strings.ToLower(commodityID)) {
 		return ParsedListingID{}, false
 	}
-	if !isoWeekPattern.MatchString(isoWeek) {
+	if !agronomy.IsISOWeekKey(isoWeek) {
 		return ParsedListingID{}, false
 	}
 

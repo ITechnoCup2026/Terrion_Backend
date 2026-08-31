@@ -83,7 +83,12 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 		bootstrapConfig.DB, bootstrapConfig.Log, bootstrapConfig.Validate,
 		supplyRequestRepository, catalogUseCase)
 
+	staggerUseCase := usecase.NewStaggerUseCase(
+		bootstrapConfig.DB, bootstrapConfig.Log, bootstrapConfig.Validate,
+		cooperativeRepository, blockRepository, projectionUseCase)
+
 	authController := http.NewAuthController(authUseCase, bootstrapConfig.Log)
+	staggerController := http.NewStaggerController(staggerUseCase, bootstrapConfig.Log)
 	catalogController := http.NewCatalogController(
 		catalogUseCase, supplyRequestUseCase, bootstrapConfig.Log)
 	rdkkController := http.NewRdkkController(rdkkUseCase, bootstrapConfig.Log)
@@ -98,6 +103,7 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 		DashboardController: dashboardController,
 		PlotController:      plotController,
 		RdkkController:      rdkkController,
+		StaggerController:   staggerController,
 		WeatherController:   weatherController,
 		AuthUseCase:         authUseCase,
 		CronSecret:          bootstrapConfig.Config.Cron.Secret,

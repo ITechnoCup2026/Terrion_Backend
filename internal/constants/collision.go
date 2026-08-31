@@ -55,3 +55,9 @@ const (
 	RequestNotFound = "request_not_found"
 	KgPerTonne      = 1000
 )
+
+const (
+	StaggerSuggestionStale = "stagger_suggestion_stale"
+	StaggerNothingToShift  = "stagger_nothing_to_shift"
+	StaggerSeasonPrefix    = "MT-"
+)
