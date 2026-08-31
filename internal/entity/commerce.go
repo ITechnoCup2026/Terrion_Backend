@@ -6,18 +6,10 @@ import (
 	"terrion-backend/internal/constants"
 )
 
-// Rupiah amounts are float64 throughout, matching the arithmetic ported from
-// the Next.js implementation. These figures are aggregates over tonnages that
-// are themselves estimates, so the rounding error is orders of magnitude below
-// the uncertainty already in the number. A ledger would need a decimal type;
-// this is not one.
 type SupplyContractRequest struct {
-	ID            string `gorm:"column:id;primaryKey;default:gen_random_uuid()"`
-	CooperativeID string `gorm:"column:cooperative_id"`
-	BuyerID       string `gorm:"column:buyer_id"`
-	// Copied from the buyer's profile when the request is made, not joined.
-	// A buyer renaming their organisation must not rewrite what the cooperative
-	// already agreed to supply.
+	ID                string                  `gorm:"column:id;primaryKey;default:gen_random_uuid()"`
+	CooperativeID     string                  `gorm:"column:cooperative_id"`
+	BuyerID           string                  `gorm:"column:buyer_id"`
 	BuyerName         string                  `gorm:"column:buyer_name"`
 	BuyerOrganisation *string                 `gorm:"column:buyer_organisation"`
 	CommodityID       string                  `gorm:"column:commodity_id"`
@@ -42,9 +34,6 @@ type InputOrder struct {
 
 func (InputOrder) TableName() string { return "input_order" }
 
-// Prices are null until a supplier quotes them. Impact figure 3 counts only
-// completed orders carrying both, so an unquoted order correctly contributes
-// nothing rather than a fabricated saving.
 type InputOrderLine struct {
 	ID                 string   `gorm:"column:id;primaryKey;default:gen_random_uuid()"`
 	InputOrderID       string   `gorm:"column:input_order_id"`

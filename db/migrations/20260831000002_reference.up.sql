@@ -15,8 +15,6 @@ create table variety (
   days_to_harvest_max int not null,
   yield_per_ha_min    numeric(8,3) not null,
   yield_per_ha_max    numeric(8,3) not null,
-  -- One variety per name per commodity. Without this the seed has no conflict
-  -- target, and re-running it silently doubles every row.
   unique (commodity_id, name)
 );
 

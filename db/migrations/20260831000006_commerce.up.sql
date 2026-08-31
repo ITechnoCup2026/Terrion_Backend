@@ -5,12 +5,6 @@ create table supply_contract_request (
   id             uuid primary key default gen_random_uuid(),
   cooperative_id uuid not null references cooperative(id) on delete cascade,
   buyer_id       uuid not null references app_user(id) on delete cascade,
-  -- Who is asking, copied from the buyer's profile at insert time.
-  --
-  -- Denormalised on purpose, for two reasons that both still hold. It is a
-  -- point-in-time record: a buyer renaming their organisation must not rewrite
-  -- what the cooperative agreed to supply. And app_user carries one policy,
-  -- self_read, so any client reaching the database directly cannot join to it.
   buyer_name         text not null,
   buyer_organisation text,
   commodity_id   uuid not null references commodity(id),

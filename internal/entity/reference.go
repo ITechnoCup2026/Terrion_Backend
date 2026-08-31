@@ -25,9 +25,6 @@ type Variety struct {
 
 func (Variety) TableName() string { return "variety" }
 
-// FertiliserRate carries Source because an RDKK figure nobody can trace to a
-// document is not usable on a form an official signs. Unverified rates say so
-// in this column, and that wording has to survive all the way to the paper.
 type FertiliserRate struct {
 	CommodityID string  `gorm:"column:commodity_id;primaryKey"`
 	InputItem   string  `gorm:"column:input_item;primaryKey"`

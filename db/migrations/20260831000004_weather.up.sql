@@ -1,6 +1,3 @@
--- Weather is stored per 0.25 degree grid cell, not per plot: one download
--- serves every plot in the cell. grid_lat / grid_lng must agree exactly with
--- plot's generated columns or the join returns nothing.
 create table weather_daily (
   grid_lat numeric(9,6) not null,
   grid_lng numeric(9,6) not null,

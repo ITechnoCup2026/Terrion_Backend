@@ -16,9 +16,6 @@ import (
 
 const migrationsDir = "../../db/migrations"
 
-// The entities exist to be mapped onto the columns db/migrations creates. A
-// mistyped column tag or a column added to a migration and forgotten here fails
-// at runtime on the first query, so the two are compared directly instead.
 func TestEntitiesMatchMigrations(t *testing.T) {
 	columns := columnsFromMigrations(t)
 
@@ -57,9 +54,6 @@ func TestEntitiesMatchMigrations(t *testing.T) {
 	}
 }
 
-// public_plot is a view, so it has no create table to compare against. Its
-// column list is the security boundary for every unauthenticated read — the
-// absence of lat, lng and nik_hash is the point — so it is asserted literally.
 func TestPublicPlotViewColumns(t *testing.T) {
 	parsed, err := schema.Parse(&entity.PublicPlot{}, &sync.Map{}, schema.NamingStrategy{})
 	if err != nil {
@@ -86,7 +80,6 @@ var (
 	createTablePatten = regexp.MustCompile(`(?i)create\s+table\s+(\w+)\s*\(`)
 )
 
-// Every column each migration's create table statements declare, by table name.
 func columnsFromMigrations(t *testing.T) map[string][]string {
 	t.Helper()
 
@@ -111,9 +104,6 @@ func columnsFromMigrations(t *testing.T) map[string][]string {
 	return tables
 }
 
-// The column names in a create table body, given the text just after its
-// opening parenthesis. Splits on top-level commas so that numeric(9,6) and the
-// case expression in plot.tile_size_m2 stay in one piece.
 func columnNames(body string) []string {
 	depth := 0
 	start := 0
