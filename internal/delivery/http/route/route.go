@@ -15,6 +15,7 @@ type RouteConfig struct {
 	CatalogController   *http.CatalogController
 	DashboardController *http.DashboardController
 	PlotController      *http.PlotController
+	PublicController    *http.PublicController
 	RdkkController      *http.RdkkController
 	StaggerController   *http.StaggerController
 	WeatherController   *http.WeatherController
@@ -33,6 +34,9 @@ func (c *RouteConfig) setupPublicRoutes() {
 	c.App.Get("/api/commodities", c.PlotController.Commodities)
 	c.App.Get("/api/catalog", c.CatalogController.Get)
 	c.App.Get("/api/catalog/cooperatives/:id", c.CatalogController.GetForCooperative)
+	c.App.Get("/api/public/plots/:publicId", c.PublicController.GetPlot)
+	c.App.Get("/api/atlas/cooperatives", c.PublicController.Cooperatives)
+	c.App.Get("/api/atlas/farms/:id", c.PublicController.Farm)
 }
 
 func (c *RouteConfig) setupAuthenticatedRoutes() {
