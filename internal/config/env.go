@@ -56,7 +56,7 @@ func NewConfig() *Config {
 	cfg.App.Name = getEnv("APP_NAME", "terrion-backend")
 	cfg.App.Env = getEnv("APP_ENV", "development")
 
-	cfg.Web.Port = getEnvAsInt("WEB_PORT", 8080)
+	cfg.Web.Port = getEnvAsInt("PORT", getEnvAsInt("WEB_PORT", 8080))
 	cfg.Web.Prefork = getEnvAsBool("WEB_PREFORK", false)
 	cfg.Web.CorsOrigins = getEnv("WEB_CORS_ORIGINS", "http://localhost:3000")
 

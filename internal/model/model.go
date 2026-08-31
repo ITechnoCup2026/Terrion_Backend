@@ -17,3 +17,8 @@ type PageMetadata struct {
 	TotalItem int64 `json:"total_item"`
 	TotalPage int64 `json:"total_page"`
 }
+
+type HealthResponse struct {
+	Status  string `json:"status"`
+	Service string `json:"service"`
+}
