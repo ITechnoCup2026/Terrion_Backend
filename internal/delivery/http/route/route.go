@@ -12,6 +12,7 @@ import (
 type RouteConfig struct {
 	App                 *fiber.App
 	AuthController      *http.AuthController
+	CatalogController   *http.CatalogController
 	DashboardController *http.DashboardController
 	PlotController      *http.PlotController
 	RdkkController      *http.RdkkController
@@ -29,6 +30,8 @@ func (c *RouteConfig) Setup() {
 func (c *RouteConfig) setupPublicRoutes() {
 	c.App.Post("/api/auth/signup", c.AuthController.SignUp)
 	c.App.Get("/api/commodities", c.PlotController.Commodities)
+	c.App.Get("/api/catalog", c.CatalogController.Get)
+	c.App.Get("/api/catalog/cooperatives/:id", c.CatalogController.GetForCooperative)
 }
 
 func (c *RouteConfig) setupAuthenticatedRoutes() {
@@ -45,6 +48,11 @@ func (c *RouteConfig) setupAuthenticatedRoutes() {
 	c.App.Get("/api/rdkk", auth, c.RdkkController.Get)
 	c.App.Post("/api/input-orders", auth,
 		middleware.RequireRole(constants.RolePengurus), c.RdkkController.CreateInputOrder)
+	c.App.Get("/api/supply-requests", auth, c.CatalogController.ListRequests)
+	c.App.Post("/api/supply-requests", auth,
+		middleware.RequireRole(constants.RoleBuyer), c.CatalogController.CreateRequest)
+	c.App.Patch("/api/supply-requests/:id", auth,
+		middleware.RequireRole(constants.RolePengurus), c.CatalogController.RespondToRequest)
 }
 
 func (c *RouteConfig) setupCronRoutes() {

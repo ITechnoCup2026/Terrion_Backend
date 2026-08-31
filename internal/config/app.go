@@ -38,6 +38,7 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 	referencePriceRepository := &repository.ReferencePriceRepository{}
 	inputOrderRepository := &repository.InputOrderRepository{}
 	fertiliserRateRepository := &repository.FertiliserRateRepository{}
+	supplyRequestRepository := &repository.SupplyRequestRepository{}
 
 	goTrue := supabase.NewClient(
 		bootstrapConfig.Config.Supabase.URL,
@@ -73,7 +74,18 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 		cooperativeRepository, plotRepository, blockRepository, memberRepository,
 		fertiliserRateRepository, inputOrderRepository)
 
+	catalogUseCase := usecase.NewCatalogUseCase(
+		bootstrapConfig.DB, bootstrapConfig.Log, bootstrapConfig.Redis,
+		cooperativeRepository, commodityRepository, blockRepository, varietyRepository,
+		projectionUseCase)
+
+	supplyRequestUseCase := usecase.NewSupplyRequestUseCase(
+		bootstrapConfig.DB, bootstrapConfig.Log, bootstrapConfig.Validate,
+		supplyRequestRepository, catalogUseCase)
+
 	authController := http.NewAuthController(authUseCase, bootstrapConfig.Log)
+	catalogController := http.NewCatalogController(
+		catalogUseCase, supplyRequestUseCase, bootstrapConfig.Log)
 	rdkkController := http.NewRdkkController(rdkkUseCase, bootstrapConfig.Log)
 	dashboardController := http.NewDashboardController(dashboardUseCase, bootstrapConfig.Log)
 	plotController := http.NewPlotController(plotUseCase, bootstrapConfig.Log)
@@ -82,6 +94,7 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 	routeConfig := route.RouteConfig{
 		App:                 bootstrapConfig.App,
 		AuthController:      authController,
+		CatalogController:   catalogController,
 		DashboardController: dashboardController,
 		PlotController:      plotController,
 		RdkkController:      rdkkController,
