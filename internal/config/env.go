@@ -37,6 +37,12 @@ type Config struct {
 	Cron struct {
 		Secret string
 	}
+	Supabase struct {
+		URL            string
+		AnonKey        string
+		ServiceRoleKey string
+		JWTSecret      string
+	}
 }
 
 func NewConfig() *Config {
@@ -66,6 +72,11 @@ func NewConfig() *Config {
 	cfg.Redis.URL = getEnv("REDIS_URL", "")
 
 	cfg.Cron.Secret = getEnv("CRON_SECRET", "")
+
+	cfg.Supabase.URL = getEnv("SUPABASE_URL", "")
+	cfg.Supabase.AnonKey = getEnv("SUPABASE_ANON_KEY", "")
+	cfg.Supabase.ServiceRoleKey = getEnv("SUPABASE_SERVICE_ROLE_KEY", "")
+	cfg.Supabase.JWTSecret = getEnv("SUPABASE_JWT_SECRET", "")
 
 	return cfg
 }
