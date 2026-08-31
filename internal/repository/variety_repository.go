@@ -19,3 +19,9 @@ func (r *VarietyRepository) FindByIDs(db *gorm.DB, ids []string) ([]entity.Varie
 	err := db.Where("id IN ?", ids).Find(&varieties).Error
 	return varieties, err
 }
+
+func (r *VarietyRepository) FindAll(db *gorm.DB) ([]entity.Variety, error) {
+	varieties := []entity.Variety{}
+	err := db.Order("name").Find(&varieties).Error
+	return varieties, err
+}

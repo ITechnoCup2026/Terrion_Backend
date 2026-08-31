@@ -9,6 +9,7 @@ const (
 	WeatherBackfillCompleteRows = 3000
 	WeatherRefreshLookbackDays  = 30
 	WeatherUpsertBatchSize      = 1000
+	WeatherBackfillTimeout      = 5 * time.Minute
 )
 
 const (
