@@ -34,6 +34,9 @@ type Config struct {
 	Redis struct {
 		URL string
 	}
+	Cron struct {
+		Secret string
+	}
 }
 
 func NewConfig() *Config {
@@ -61,6 +64,8 @@ func NewConfig() *Config {
 	cfg.Database.PoolLifetime = getEnvAsInt("DB_POOL_LIFETIME", 300)
 
 	cfg.Redis.URL = getEnv("REDIS_URL", "")
+
+	cfg.Cron.Secret = getEnv("CRON_SECRET", "")
 
 	return cfg
 }
