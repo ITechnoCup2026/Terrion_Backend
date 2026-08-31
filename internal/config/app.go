@@ -47,6 +47,7 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 		bootstrapConfig.Config.Supabase.ServiceRoleKey,
 	)
 	verifier := supabase.NewVerifier(bootstrapConfig.Config.Supabase.JWTSecret)
+	warnOnUnusableJWTSecret(bootstrapConfig)
 
 	authUseCase := usecase.NewAuthUseCase(
 		bootstrapConfig.DB, bootstrapConfig.Log, bootstrapConfig.Validate,
@@ -111,6 +112,7 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 
 	routeConfig := route.RouteConfig{
 		App:                 bootstrapConfig.App,
+		ServiceName:         bootstrapConfig.Config.App.Name,
 		AuthController:      authController,
 		CatalogController:   catalogController,
 		DashboardController: dashboardController,
@@ -123,4 +125,23 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 		CronSecret:          bootstrapConfig.Config.Cron.Secret,
 	}
 	routeConfig.Setup()
+}
+
+func warnOnUnusableJWTSecret(bootstrapConfig *BootstrapConfig) {
+	secret := bootstrapConfig.Config.Supabase.JWTSecret
+	anonKey := bootstrapConfig.Config.Supabase.AnonKey
+
+	if secret == "" {
+		bootstrapConfig.Log.Warn(
+			"SUPABASE_JWT_SECRET is empty: every authenticated request will be rejected")
+		return
+	}
+	if anonKey == "" {
+		return
+	}
+	if !supabase.NewVerifier(secret).SignedByConfiguredSecret(anonKey) {
+		bootstrapConfig.Log.Warn(
+			"SUPABASE_JWT_SECRET does not sign SUPABASE_ANON_KEY: it is not the project's " +
+				"JWT secret, so every authenticated request will be rejected")
+	}
 }

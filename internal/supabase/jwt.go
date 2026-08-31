@@ -41,3 +41,15 @@ func (v *Verifier) Subject(token string) (string, error) {
 
 	return subject, nil
 }
+
+func (v *Verifier) SignedByConfiguredSecret(token string) bool {
+	if len(v.secret) == 0 {
+		return false
+	}
+
+	_, err := jwt.Parse(token,
+		func(*jwt.Token) (any, error) { return v.secret, nil },
+		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+	)
+	return err == nil
+}

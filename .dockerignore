@@ -1,0 +1,11 @@
+.git
+.github
+.claude
+.superpowers
+docs
+tmp
+bin
+.env
+.env.*
+*.md
+.air.toml

@@ -6,11 +6,13 @@ import (
 	"terrion-backend/internal/constants"
 	"terrion-backend/internal/delivery/http"
 	"terrion-backend/internal/delivery/http/middleware"
+	"terrion-backend/internal/model"
 	"terrion-backend/internal/usecase"
 )
 
 type RouteConfig struct {
 	App                 *fiber.App
+	ServiceName         string
 	AuthController      *http.AuthController
 	CatalogController   *http.CatalogController
 	DashboardController *http.DashboardController
@@ -30,6 +32,7 @@ func (c *RouteConfig) Setup() {
 }
 
 func (c *RouteConfig) setupPublicRoutes() {
+	c.App.Get("/api/health", c.health)
 	c.App.Post("/api/auth/signup", c.AuthController.SignUp)
 	c.App.Get("/api/commodities", c.PlotController.Commodities)
 	c.App.Get("/api/catalog", c.CatalogController.Get)
@@ -65,4 +68,10 @@ func (c *RouteConfig) setupAuthenticatedRoutes() {
 func (c *RouteConfig) setupCronRoutes() {
 	cron := c.App.Group("/api/cron", middleware.CronSecret(c.CronSecret))
 	cron.Post("/weather", c.WeatherController.Refresh)
+}
+
+func (c *RouteConfig) health(ctx *fiber.Ctx) error {
+	return ctx.JSON(model.WebResponse[*model.HealthResponse]{
+		Data: &model.HealthResponse{Status: "ok", Service: c.ServiceName},
+	})
 }
