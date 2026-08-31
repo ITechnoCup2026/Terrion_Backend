@@ -19,10 +19,6 @@ type BootstrapConfig struct {
 	Config   *Config
 }
 
-// Bootstrap is the composition root: it wires repositories, use cases,
-// controllers, and middleware together, then hands them to the route
-// config. As domains are added, construct them here in that order
-// (repository -> usecase -> controller) before calling routeConfig.Setup().
 func Bootstrap(bootstrapConfig *BootstrapConfig) {
 	routeConfig := route.RouteConfig{
 		App: bootstrapConfig.App,

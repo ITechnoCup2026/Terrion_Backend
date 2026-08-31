@@ -22,8 +22,6 @@ func buildDSN(cfg *Config) string {
 	)
 }
 
-// NewDatabase opens a connection to Supabase Postgres (session pooler /
-// direct connection) and configures the connection pool.
 func NewDatabase(cfg *Config, log *logrus.Logger) *gorm.DB {
 	dsn := buildDSN(cfg)
 

@@ -36,8 +36,6 @@ type Config struct {
 	}
 }
 
-// NewConfig loads .env into the process environment (if present) and builds
-// a typed Config from environment variables, falling back to defaults.
 func NewConfig() *Config {
 	_ = godotenv.Load()
 

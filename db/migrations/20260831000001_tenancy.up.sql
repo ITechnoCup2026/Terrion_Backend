@@ -13,8 +13,6 @@ create table cooperative (
   created_at      timestamptz not null default now()
 );
 
--- id references auth.users: Supabase GoTrue stays the identity provider, and
--- the Go API verifies its access tokens rather than issuing its own.
 create table app_user (
   id             uuid primary key references auth.users(id) on delete cascade,
   role           user_role not null,

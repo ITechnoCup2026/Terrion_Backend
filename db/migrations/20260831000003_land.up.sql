@@ -18,8 +18,6 @@ create table plot (
     end
   ) stored,
 
-  -- Decorative terrain. Read path is `terrain_override ?? generateTerrain(terrain_seed)`,
-  -- so editing later writes a column that already exists.
   terrain_seed     int not null default ((random() * 2147483647)::int),
   terrain_override jsonb,
   decorations      jsonb not null default '[]'::jsonb,
