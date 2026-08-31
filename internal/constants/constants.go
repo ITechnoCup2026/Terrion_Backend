@@ -31,3 +31,8 @@ const (
 	GeneratedPasswordPrefix = "terrion-"
 	GeneratedPasswordBytes  = 6
 )
+
+const (
+	EnvFileName    = ".env"
+	ModuleFileName = "go.mod"
+)

@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -23,6 +24,10 @@ func buildDSN(cfg *Config) string {
 }
 
 func NewDatabase(cfg *Config, log *logrus.Logger) *gorm.DB {
+	if cfg.Database.Host == "" || cfg.Database.User == "" {
+		log.Fatalf("DB_HOST and DB_USER are empty: no .env was found from %s up to the module root", workingDirectory())
+	}
+
 	dsn := buildDSN(cfg)
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
@@ -56,4 +61,12 @@ type logrusWriter struct {
 
 func (l *logrusWriter) Printf(message string, args ...interface{}) {
 	l.Logger.Tracef(message, args...)
+}
+
+func workingDirectory() string {
+	directory, err := os.Getwd()
+	if err != nil {
+		return "the working directory"
+	}
+	return directory
 }
