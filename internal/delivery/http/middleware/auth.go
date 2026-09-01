@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"slices"
-	"strings"
 
 	"github.com/gofiber/fiber/v2"
 
@@ -13,7 +12,7 @@ import (
 
 func Auth(authUseCase *usecase.AuthUseCase) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
-		user, err := authUseCase.Authenticate(ctx.UserContext(), bearerToken(ctx))
+		user, err := authUseCase.Authenticate(ctx.UserContext(), ctx.Cookies(constants.SessionCookieName))
 		if err != nil {
 			return fiber.NewError(fiber.StatusUnauthorized, "Unauthorised")
 		}
@@ -39,15 +38,4 @@ func AuthenticatedUser(ctx *fiber.Ctx) *entity.AppUser {
 		return nil
 	}
 	return user
-}
-
-func bearerToken(ctx *fiber.Ctx) string {
-	header := ctx.Get(fiber.HeaderAuthorization)
-	if len(header) <= len(constants.BearerPrefix) {
-		return ""
-	}
-	if !strings.EqualFold(header[:len(constants.BearerPrefix)], constants.BearerPrefix) {
-		return ""
-	}
-	return header[len(constants.BearerPrefix):]
 }

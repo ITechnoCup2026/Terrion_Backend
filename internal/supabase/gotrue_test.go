@@ -13,6 +13,7 @@ import (
 type capturedCall struct {
 	method     string
 	path       string
+	query      string
 	apiKey     string
 	authHeader string
 }
@@ -24,6 +25,7 @@ func fakeGoTrue(t *testing.T, status int, body string) (*supabase.Client, *captu
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		captured.method = r.Method
 		captured.path = r.URL.Path
+		captured.query = r.URL.RawQuery
 		captured.apiKey = r.Header.Get("apikey")
 		captured.authHeader = r.Header.Get("Authorization")
 
@@ -168,5 +170,92 @@ func TestDeleteUserReportsAFailure(t *testing.T) {
 
 	if err := client.DeleteUser(context.Background(), "ghost"); err == nil {
 		t.Error("DeleteUser returned nil error for a 404, want a failure")
+	}
+}
+
+func TestSignInReturnsTheSession(t *testing.T) {
+	client, captured := fakeGoTrue(t, http.StatusOK, `{
+		"access_token":"access-1",
+		"refresh_token":"refresh-1",
+		"user":{"id":"user-1"}}`)
+
+	session, err := client.SignIn(context.Background(), "diana@example.com", "hunter2hunter2")
+	if err != nil {
+		t.Fatalf("SignIn: %v", err)
+	}
+
+	if session.UserID != "user-1" || session.AccessToken != "access-1" || session.RefreshToken != "refresh-1" {
+		t.Errorf("session = %+v, want user-1/access-1/refresh-1", session)
+	}
+	if captured.path != "/auth/v1/token" || captured.method != http.MethodPost {
+		t.Errorf("called %s %s, want POST /auth/v1/token", captured.method, captured.path)
+	}
+	if captured.query != "grant_type=password" {
+		t.Errorf("query = %q, want grant_type=password", captured.query)
+	}
+	if captured.apiKey != "anon-key" || captured.authHeader != "Bearer anon-key" {
+		t.Errorf("signin used %q/%q, want the anon key", captured.apiKey, captured.authHeader)
+	}
+}
+
+func TestSignInSurfacesInvalidCredentials(t *testing.T) {
+	client, _ := fakeGoTrue(t, http.StatusBadRequest, `{"error_code":"invalid_credentials"}`)
+
+	_, err := client.SignIn(context.Background(), "diana@example.com", "wrong-password")
+
+	var authError *supabase.AuthError
+	if !errors.As(err, &authError) {
+		t.Fatalf("error = %v, want a *supabase.AuthError", err)
+	}
+	if authError.Code != "invalid_credentials" {
+		t.Errorf("Code = %q, want invalid_credentials", authError.Code)
+	}
+}
+
+func TestRefreshTokenRotatesTheSession(t *testing.T) {
+	client, captured := fakeGoTrue(t, http.StatusOK, `{
+		"access_token":"access-2",
+		"refresh_token":"refresh-2",
+		"user":{"id":"user-1"}}`)
+
+	session, err := client.RefreshToken(context.Background(), "refresh-1")
+	if err != nil {
+		t.Fatalf("RefreshToken: %v", err)
+	}
+
+	if session.AccessToken != "access-2" || session.RefreshToken != "refresh-2" {
+		t.Errorf("session = %+v, want the rotated pair", session)
+	}
+	if captured.query != "grant_type=refresh_token" {
+		t.Errorf("query = %q, want grant_type=refresh_token", captured.query)
+	}
+	if captured.apiKey != "anon-key" || captured.authHeader != "Bearer anon-key" {
+		t.Errorf("refresh used %q/%q, want the anon key", captured.apiKey, captured.authHeader)
+	}
+}
+
+func TestLogoutUsesTheUsersAccessTokenNotTheAnonKey(t *testing.T) {
+	client, captured := fakeGoTrue(t, http.StatusNoContent, "")
+
+	if err := client.Logout(context.Background(), "user-access-token"); err != nil {
+		t.Fatalf("Logout: %v", err)
+	}
+
+	if captured.path != "/auth/v1/logout" || captured.method != http.MethodPost {
+		t.Errorf("called %s %s, want POST /auth/v1/logout", captured.method, captured.path)
+	}
+	if captured.apiKey != "anon-key" {
+		t.Errorf("apiKey = %q, want the anon key", captured.apiKey)
+	}
+	if captured.authHeader != "Bearer user-access-token" {
+		t.Errorf("authHeader = %q, want the user's own access token, not the anon key", captured.authHeader)
+	}
+}
+
+func TestLogoutReportsAFailure(t *testing.T) {
+	client, _ := fakeGoTrue(t, http.StatusUnauthorized, `{"error_code":"session_not_found"}`)
+
+	if err := client.Logout(context.Background(), "stale-token"); err == nil {
+		t.Error("Logout returned nil error for a 401, want a failure")
 	}
 }

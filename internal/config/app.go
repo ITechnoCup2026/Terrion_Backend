@@ -50,7 +50,7 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 	warnOnUnusableJWTSecret(bootstrapConfig)
 
 	authUseCase := usecase.NewAuthUseCase(
-		bootstrapConfig.DB, bootstrapConfig.Log, bootstrapConfig.Validate,
+		bootstrapConfig.DB, bootstrapConfig.Log, bootstrapConfig.Validate, bootstrapConfig.Redis,
 		userRepository, verifier, goTrue)
 
 	weatherUseCase := usecase.NewWeatherUseCase(
@@ -99,7 +99,8 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 		cooperativeRepository, plotRepository, publicPlotRepository,
 		blockRepository, commodityRepository)
 
-	authController := http.NewAuthController(authUseCase, bootstrapConfig.Log)
+	authController := http.NewAuthController(
+		authUseCase, bootstrapConfig.Log, bootstrapConfig.Config.App.Env == "production")
 	publicController := http.NewPublicController(
 		publicUseCase, atlasUseCase, bootstrapConfig.Log)
 	staggerController := http.NewStaggerController(staggerUseCase, bootstrapConfig.Log)

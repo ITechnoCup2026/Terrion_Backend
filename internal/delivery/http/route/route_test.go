@@ -25,13 +25,13 @@ func routedApp(t *testing.T) *fiber.App {
 	log := logrus.New()
 	log.SetOutput(io.Discard)
 
-	authUseCase := usecase.NewAuthUseCase(nil, log, validator.New(),
+	authUseCase := usecase.NewAuthUseCase(nil, log, validator.New(), nil,
 		&repository.Repository[entity.AppUser]{}, supabase.NewVerifier(""), nil)
 
 	app := fiber.New()
 	config := route.RouteConfig{
 		App:               app,
-		AuthController:    delivery.NewAuthController(authUseCase, log),
+		AuthController:    delivery.NewAuthController(authUseCase, log, false),
 		WeatherController: delivery.NewWeatherController(nil, log),
 		AuthUseCase:       authUseCase,
 		CronSecret:        "s3cret",
@@ -81,6 +81,28 @@ func TestSignupIsReachableWithoutAToken(t *testing.T) {
 
 	if got == fiber.StatusUnauthorized || got == fiber.StatusNotFound {
 		t.Errorf("status = %d, want the handler to be reached: signup must be public", got)
+	}
+}
+
+func TestLoginIsReachableWithoutASession(t *testing.T) {
+	app := routedApp(t)
+
+	body := strings.NewReader(`{"email":"","password":""}`)
+	got := statusOf(t, app, http.MethodPost, "/api/auth/login", body)
+
+	if got == fiber.StatusUnauthorized || got == fiber.StatusNotFound {
+		t.Errorf("status = %d, want the handler to be reached: login must be public", got)
+	}
+}
+
+func TestRefreshAndLogoutAreReachableWithoutASession(t *testing.T) {
+	app := routedApp(t)
+
+	for _, path := range []string{"/api/auth/refresh", "/api/auth/logout"} {
+		got := statusOf(t, app, http.MethodPost, path, nil)
+		if got == fiber.StatusNotFound {
+			t.Errorf("%s: status = %d, want the route to exist", path, got)
+		}
 	}
 }
 
