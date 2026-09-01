@@ -13,7 +13,8 @@ func NewFiber(cfg *Config) *fiber.App {
 	})
 
 	app.Use(cors.New(cors.Config{
-		AllowOrigins: cfg.Web.CorsOrigins,
+		AllowOrigins:     cfg.Web.CorsOrigins,
+		AllowCredentials: cfg.Web.CorsOrigins != "",
 	}))
 
 	return app

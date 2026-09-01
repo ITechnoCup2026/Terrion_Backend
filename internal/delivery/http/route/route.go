@@ -34,6 +34,9 @@ func (c *RouteConfig) Setup() {
 func (c *RouteConfig) setupPublicRoutes() {
 	c.App.Get("/api/health", c.health)
 	c.App.Post("/api/auth/signup", c.AuthController.SignUp)
+	c.App.Post("/api/auth/login", c.AuthController.Login)
+	c.App.Post("/api/auth/refresh", c.AuthController.Refresh)
+	c.App.Post("/api/auth/logout", c.AuthController.Logout)
 	c.App.Get("/api/commodities", c.PlotController.Commodities)
 	c.App.Get("/api/catalog", c.CatalogController.Get)
 	c.App.Get("/api/catalog/cooperatives/:id", c.CatalogController.GetForCooperative)

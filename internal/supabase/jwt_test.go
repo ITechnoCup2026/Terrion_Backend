@@ -123,3 +123,37 @@ func TestVerifierRejectsGarbage(t *testing.T) {
 		}
 	}
 }
+
+func TestSignedByConfiguredSecretAcceptsATokenFromTheSameSecret(t *testing.T) {
+	verifier := supabase.NewVerifier(testSecret)
+	token := signedToken(t, testSecret, jwt.MapClaims{
+		"role": "anon",
+		"exp":  time.Now().Add(time.Hour).Unix(),
+	})
+
+	if !verifier.SignedByConfiguredSecret(token) {
+		t.Error("SignedByConfiguredSecret = false for a token with no sub, want true")
+	}
+}
+
+func TestSignedByConfiguredSecretRejectsAnotherSecret(t *testing.T) {
+	verifier := supabase.NewVerifier(testSecret)
+	token := signedToken(t, "a-different-secret", jwt.MapClaims{
+		"role": "anon",
+		"exp":  time.Now().Add(time.Hour).Unix(),
+	})
+
+	if verifier.SignedByConfiguredSecret(token) {
+		t.Error("SignedByConfiguredSecret = true for another secret, want false")
+	}
+}
+
+func TestSignedByConfiguredSecretRejectsWithoutASecret(t *testing.T) {
+	token := signedToken(t, testSecret, jwt.MapClaims{
+		"exp": time.Now().Add(time.Hour).Unix(),
+	})
+
+	if supabase.NewVerifier("").SignedByConfiguredSecret(token) {
+		t.Error("SignedByConfiguredSecret = true with no configured secret, want false")
+	}
+}

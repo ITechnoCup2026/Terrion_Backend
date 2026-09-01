@@ -1,14 +1,26 @@
 package constants
 
+import "time"
+
 const (
 	AuthUserLocal = "auth_user"
 	BearerPrefix  = "Bearer "
 )
 
 const (
-	GoTrueSignUpPath     = "/auth/v1/signup"
-	GoTrueAdminUsersPath = "/auth/v1/admin/users"
-	GoTrueTimeout        = OpenMeteoTimeout
+	SessionCookieName = "terrion_session"
+	SessionKeyPrefix  = "terrion:session:"
+	SessionIDBytes    = 32
+	SessionTTL        = 30 * 24 * time.Hour
+)
+
+const (
+	GoTrueSignUpPath        = "/auth/v1/signup"
+	GoTrueAdminUsersPath    = "/auth/v1/admin/users"
+	GoTrueTokenPasswordPath = "/auth/v1/token?grant_type=password"
+	GoTrueTokenRefreshPath  = "/auth/v1/token?grant_type=refresh_token"
+	GoTrueLogoutPath        = "/auth/v1/logout"
+	GoTrueTimeout           = OpenMeteoTimeout
 )
 
 const (

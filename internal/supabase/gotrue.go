@@ -65,7 +65,7 @@ func (c *Client) SignUp(ctx context.Context, email, password string) (SignUpResu
 	}
 
 	response, err := c.send(ctx, http.MethodPost,
-		c.URL+constants.GoTrueSignUpPath, c.AnonKey, bytes.NewReader(body))
+		c.URL+constants.GoTrueSignUpPath, c.AnonKey, c.AnonKey, bytes.NewReader(body))
 	if err != nil {
 		return SignUpResult{}, err
 	}
@@ -95,6 +95,77 @@ func (c *Client) SignUp(ctx context.Context, email, password string) (SignUpResu
 	}, nil
 }
 
+type Session struct {
+	UserID       string
+	AccessToken  string
+	RefreshToken string
+}
+
+type tokenResponse struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	User         struct {
+		ID string `json:"id"`
+	} `json:"user"`
+}
+
+func (c *Client) token(
+	ctx context.Context, path, apiKey, authKey string, payload map[string]string,
+) (Session, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return Session{}, fmt.Errorf("building token request: %w", err)
+	}
+
+	response, err := c.send(ctx, http.MethodPost, c.URL+path, apiKey, authKey, bytes.NewReader(body))
+	if err != nil {
+		return Session{}, err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode >= http.StatusBadRequest {
+		return Session{}, authErrorFrom(response)
+	}
+
+	var decoded tokenResponse
+	if err := json.NewDecoder(response.Body).Decode(&decoded); err != nil {
+		return Session{}, fmt.Errorf("decoding token response: %w", err)
+	}
+	if decoded.User.ID == "" {
+		return Session{}, fmt.Errorf("token response carries no user")
+	}
+
+	return Session{
+		UserID:       decoded.User.ID,
+		AccessToken:  decoded.AccessToken,
+		RefreshToken: decoded.RefreshToken,
+	}, nil
+}
+
+func (c *Client) SignIn(ctx context.Context, email, password string) (Session, error) {
+	return c.token(ctx, constants.GoTrueTokenPasswordPath, c.AnonKey, c.AnonKey,
+		map[string]string{"email": email, "password": password})
+}
+
+func (c *Client) RefreshToken(ctx context.Context, refreshToken string) (Session, error) {
+	return c.token(ctx, constants.GoTrueTokenRefreshPath, c.AnonKey, c.AnonKey,
+		map[string]string{"refresh_token": refreshToken})
+}
+
+func (c *Client) Logout(ctx context.Context, accessToken string) error {
+	response, err := c.send(ctx, http.MethodPost,
+		c.URL+constants.GoTrueLogoutPath, c.AnonKey, accessToken, nil)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode >= http.StatusBadRequest {
+		return authErrorFrom(response)
+	}
+	return nil
+}
+
 func (c *Client) CreateUser(ctx context.Context, email, password string) (string, error) {
 	body, err := json.Marshal(map[string]any{
 		"email":         email,
@@ -106,7 +177,7 @@ func (c *Client) CreateUser(ctx context.Context, email, password string) (string
 	}
 
 	response, err := c.send(ctx, http.MethodPost,
-		c.URL+constants.GoTrueAdminUsersPath, c.ServiceRoleKey, bytes.NewReader(body))
+		c.URL+constants.GoTrueAdminUsersPath, c.ServiceRoleKey, c.ServiceRoleKey, bytes.NewReader(body))
 	if err != nil {
 		return "", err
 	}
@@ -128,7 +199,7 @@ func (c *Client) CreateUser(ctx context.Context, email, password string) (string
 
 func (c *Client) DeleteUser(ctx context.Context, userID string) error {
 	response, err := c.send(ctx, http.MethodDelete,
-		c.URL+constants.GoTrueAdminUsersPath+"/"+userID, c.ServiceRoleKey, nil)
+		c.URL+constants.GoTrueAdminUsersPath+"/"+userID, c.ServiceRoleKey, c.ServiceRoleKey, nil)
 	if err != nil {
 		return err
 	}
@@ -141,14 +212,14 @@ func (c *Client) DeleteUser(ctx context.Context, userID string) error {
 }
 
 func (c *Client) send(
-	ctx context.Context, method, address, key string, body io.Reader,
+	ctx context.Context, method, address, apiKey, authKey string, body io.Reader,
 ) (*http.Response, error) {
 	request, err := http.NewRequestWithContext(ctx, method, address, body)
 	if err != nil {
 		return nil, fmt.Errorf("building gotrue request: %w", err)
 	}
-	request.Header.Set("apikey", key)
-	request.Header.Set("Authorization", constants.BearerPrefix+key)
+	request.Header.Set("apikey", apiKey)
+	request.Header.Set("Authorization", constants.BearerPrefix+authKey)
 	request.Header.Set("Content-Type", "application/json")
 
 	response, err := c.HTTP.Do(request)

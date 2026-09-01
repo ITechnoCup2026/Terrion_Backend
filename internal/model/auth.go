@@ -10,6 +10,11 @@ type SignupRequest struct {
 	ConfirmPassword string `json:"confirm_password" validate:"required,eqfield=Password"`
 }
 
+type LoginRequest struct {
+	Email    string `json:"email" validate:"required,email"`
+	Password string `json:"password" validate:"required,min=8"`
+}
+
 type SignupResponse struct {
 	Outcome string `json:"outcome"`
 	Email   string `json:"email,omitempty"`
