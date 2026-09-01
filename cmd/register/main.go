@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -216,13 +217,14 @@ func resolveCooperative(tx *gorm.DB, home cooperative) (*string, error) {
 	}
 
 	created := &entity.Cooperative{
-		ID:       uuid.NewString(),
-		Name:     home.name,
-		Village:  home.village,
-		District: home.district,
-		Province: home.province,
-		Lat:      home.lat,
-		Lng:      home.lng,
+		ID:             uuid.NewString(),
+		Name:           home.name,
+		Village:        home.village,
+		District:       home.district,
+		Province:       home.province,
+		Lat:            home.lat,
+		Lng:            home.lng,
+		StaggerApplied: json.RawMessage("[]"),
 	}
 	if err := tx.Create(created).Error; err != nil {
 		return nil, fmt.Errorf("creating cooperative %q: %w", home.name, err)
