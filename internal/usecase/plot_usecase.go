@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -208,6 +209,7 @@ func (u *PlotUseCase) Create(
 		AreaHa:        areaHa,
 		Lat:           *request.Lat,
 		Lng:           *request.Lng,
+		Decorations:   json.RawMessage("[]"),
 	}
 
 	blocks := make([]entity.Block, len(request.Plantings))

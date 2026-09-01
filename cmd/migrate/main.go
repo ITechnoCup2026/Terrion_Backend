@@ -11,6 +11,7 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/sirupsen/logrus"
 
 	"terrion-backend/internal/config"
 	"terrion-backend/internal/constants"
@@ -35,7 +36,7 @@ func main() {
 	}
 	defer runner.Close()
 
-	if err := run(runner, command, flag.Arg(1)); err != nil {
+	if err := run(cfg, log, runner, command, flag.Arg(1)); err != nil {
 		log.Fatalf("%s: %v", command, err)
 	}
 
@@ -50,14 +51,17 @@ func main() {
 	log.Infof("database is at version %d (dirty: %t)", version, dirty)
 }
 
-func run(runner *migrate.Migrate, command, argument string) error {
+func run(cfg *config.Config, log *logrus.Logger, runner *migrate.Migrate, command, argument string) error {
 	switch command {
 	case "up":
 		return skipNoChange(runner.Up())
 	case "down":
 		return skipNoChange(runner.Steps(-1))
 	case "drop":
-		return runner.Drop()
+		if err := runner.Drop(); err != nil {
+			return err
+		}
+		return dropLeftovers(cfg, log)
 	case "force":
 		version, err := strconv.Atoi(argument)
 		if err != nil {
@@ -77,6 +81,18 @@ func skipNoChange(err error) error {
 		return nil
 	}
 	return err
+}
+
+func dropLeftovers(cfg *config.Config, log *logrus.Logger) error {
+	db := config.NewDatabase(cfg, log)
+	return db.Exec(`
+		drop function if exists current_user_role();
+		drop function if exists current_cooperative_id();
+		drop type if exists user_role cascade;
+		drop type if exists region_level cascade;
+		drop type if exists order_status cascade;
+		drop type if exists request_status cascade;
+	`).Error
 }
 
 func postgresURL(cfg *config.Config) string {
@@ -99,7 +115,7 @@ func usage() {
   up                apply every pending migration
   down              roll back the most recently applied migration
   force <version>   mark the database as being at <version> without running anything
-  drop              delete every table in the database
+  drop              delete every table, enum type and RLS helper function
   version           report the applied version
 
 Point DB_* in .env at the target database. Use force on a database that already
