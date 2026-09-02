@@ -123,6 +123,47 @@ func TestPredictHarvestReportsAccumulatedGddAndSeries(t *testing.T) {
 	}
 }
 
+func TestPredictHarvestProjectsGddPastTheLastKnownDayUntilMaturity(t *testing.T) {
+	window := predictOrFail(t, agronomy.HarvestInput{
+		PlantingDate: planted, Observed: observedDays(planted, 10, 26),
+		Climatology: flatNormals(26, 2), Variety: maize,
+	})
+
+	if window.ProjectedFrom == nil {
+		t.Fatal("ProjectedFrom = nil, want the day after the last observed reading")
+	}
+	if !window.ProjectedFrom.Equal(agronomy.AddDays(planted, 10)) {
+		t.Errorf("ProjectedFrom = %v, want %v", *window.ProjectedFrom, agronomy.AddDays(planted, 10))
+	}
+
+	last := window.CumulativeGdd[len(window.CumulativeGdd)-1]
+	if last.Gdd < maize.GddRequirement {
+		t.Errorf("final projected Gdd = %v, want it to reach the %v requirement",
+			last.Gdd, maize.GddRequirement)
+	}
+	// Ascending and gapless: the slider looks up a day by scanning this series,
+	// so a hole or a step backwards would make a date resolve to the wrong stage.
+	for i := 1; i < len(window.CumulativeGdd); i++ {
+		if window.CumulativeGdd[i].Gdd < window.CumulativeGdd[i-1].Gdd {
+			t.Fatalf("CumulativeGdd decreases at day %d: %v then %v",
+				i, window.CumulativeGdd[i-1].Gdd, window.CumulativeGdd[i].Gdd)
+		}
+	}
+}
+
+func TestPredictHarvestLeavesProjectedFromNilOnceAlreadyMature(t *testing.T) {
+	// 16 Gdd/day (mean 26, base 10) x 90 days = 1440, past maize's 1400 requirement.
+	window := predictOrFail(t, agronomy.HarvestInput{
+		PlantingDate: planted, Observed: observedDays(planted, 90, 26),
+		Climatology: flatNormals(26, 2), Variety: maize,
+	})
+
+	if window.ProjectedFrom != nil {
+		t.Errorf("ProjectedFrom = %v, want nil once GddAccumulated already clears the requirement",
+			*window.ProjectedFrom)
+	}
+}
+
 func TestPredictHarvestBasis(t *testing.T) {
 	normals := flatNormals(26, 2)
 
@@ -159,8 +200,12 @@ func TestPredictHarvestDoesNotDoubleCountOverlappingDays(t *testing.T) {
 	})
 
 	closeTo(t, "GddAccumulated", window.GddAccumulated, 160, 0.5)
-	if len(window.CumulativeGdd) != 10 {
-		t.Errorf("len(CumulativeGdd) = %d, want 10", len(window.CumulativeGdd))
+	// Not exactly 10: maize is nowhere near its GDD requirement at day 10, so
+	// the series keeps going past the known days as a climatology projection.
+	// What overlapping Observed/Forecast must not do is inflate those first
+	// ten -- which GddAccumulated above already confirms.
+	if len(window.CumulativeGdd) < 10 {
+		t.Errorf("len(CumulativeGdd) = %d, want at least 10", len(window.CumulativeGdd))
 	}
 }
 

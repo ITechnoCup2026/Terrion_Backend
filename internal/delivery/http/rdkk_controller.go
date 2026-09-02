@@ -73,6 +73,23 @@ func (c *RdkkController) CreateInputOrder(ctx *fiber.Ctx) error {
 		})
 }
 
+func (c *RdkkController) ListInputOrders(ctx *fiber.Ctx) error {
+	user, err := cooperativeMember(ctx)
+	if err != nil {
+		return err
+	}
+
+	orders, err := c.UseCase.ListInputOrders(ctx.UserContext(), user)
+	if err != nil {
+		c.Log.Errorf("listing input orders: %v", err)
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to list input orders")
+	}
+
+	return ctx.JSON(model.WebResponse[[]model.InputOrderResponse]{
+		Data: converter.InputOrdersToResponse(orders),
+	})
+}
+
 func seasonFromQuery(ctx *fiber.Ctx) (usecase.Season, error) {
 	season := usecase.DefaultSeason(time.Now())
 

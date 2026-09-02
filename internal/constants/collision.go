@@ -50,10 +50,11 @@ var DeliveryPreferenceLabels = map[DeliveryPreference]string{
 }
 
 const (
-	ListingGone     = "listing_gone"
-	ListingUnknown  = "listing_unknown"
-	RequestNotFound = "request_not_found"
-	KgPerTonne      = 1000
+	ListingGone        = "listing_gone"
+	ListingUnknown     = "listing_unknown"
+	RequestNotFound    = "request_not_found"
+	AllocationExceeded = "allocation_exceeded"
+	KgPerTonne         = 1000
 )
 
 const (

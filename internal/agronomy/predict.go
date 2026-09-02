@@ -68,6 +68,14 @@ func PredictHarvest(input HarvestInput) (HarvestWindow, error) {
 	startDap := math.Round(math.Min(earlyDap, lateDap))
 	endDap := math.Round(math.Max(earlyDap, lateDap))
 
+	projected := projectGdd(projectionStart, gddAccumulated, input.Variety, normalByDayOfYear)
+	var projectedFrom *time.Time
+	if len(projected) > 0 {
+		start := projectionStart
+		projectedFrom = &start
+		cumulativeGdd = append(cumulativeGdd, projected...)
+	}
+
 	return HarvestWindow{
 		Start:          AddDays(input.PlantingDate, int(startDap)),
 		End:            AddDays(input.PlantingDate, int(endDap)),
@@ -78,7 +86,40 @@ func PredictHarvest(input HarvestInput) (HarvestWindow, error) {
 		Basis:          basisOf(input, plantedISO),
 		Plausibility:   judgePlausibility((startDap+endDap)/2, input.Variety),
 		CumulativeGdd:  cumulativeGdd,
+		ProjectedFrom:  projectedFrom,
 	}, nil
+}
+
+// projectGdd walks day by day past the last real reading using the mean
+// climatology (z=0, the same expected path judgePlausibility's midpoint
+// describes) until the variety's GDD requirement is met, so the time slider
+// has a growth curve to show for dates beyond what any weather record covers.
+// Nil once the crop has already matured within known days -- there is
+// nothing left to project.
+func projectGdd(
+	from time.Time, accumulated float64, variety Variety, normals map[int]ClimateNormal,
+) []CumulativeGdd {
+	if accumulated >= variety.GddRequirement {
+		return nil
+	}
+
+	total := accumulated
+	cursor := from
+	projected := make([]CumulativeGdd, 0, variety.DaysToHarvestMax)
+
+	for range constants.MaxProjectionDays {
+		meanC := variety.BaseTempC
+		if normal, ok := normals[DayOfYear(cursor)]; ok {
+			meanC = normal.MeanC
+		}
+		total += GddForDay(TempDay{TMin: meanC, TMax: meanC}, variety.BaseTempC)
+		projected = append(projected, CumulativeGdd{Date: ToISODate(cursor), Gdd: total})
+		if total >= variety.GddRequirement {
+			break
+		}
+		cursor = AddDays(cursor, 1)
+	}
+	return projected
 }
 
 func mergeWeatherSincePlanting(forecast, observed []TempDay, plantedISO string) []TempDay {

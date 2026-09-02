@@ -53,6 +53,11 @@ type HarvestWindow struct {
 	Basis          constants.WindowBasis
 	Plausibility   constants.Plausibility
 	CumulativeGdd  []CumulativeGdd
+	// ProjectedFrom is nil when CumulativeGdd is entirely observed/forecast
+	// weather. Otherwise it is the first date in CumulativeGdd computed from
+	// climate normals rather than a real reading -- the boundary the time
+	// slider draws differently so a projection is never mistaken for a fact.
+	ProjectedFrom *time.Time
 }
 
 type BlockProjection struct {

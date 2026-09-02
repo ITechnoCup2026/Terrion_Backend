@@ -31,6 +31,10 @@ func HarvestWindowToResponse(
 		for i, point := range window.CumulativeGdd {
 			response.CumulativeGdd[i] = model.CumulativeGddPoint{Date: point.Date, Gdd: point.Gdd}
 		}
+		if window.ProjectedFrom != nil {
+			date := agronomy.ToISODate(*window.ProjectedFrom)
+			response.ProjectedFrom = &date
+		}
 	}
 
 	return response

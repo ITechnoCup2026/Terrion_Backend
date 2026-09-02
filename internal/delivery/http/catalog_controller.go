@@ -136,6 +136,9 @@ func (c *CatalogController) requestFailure(err error, what string) error {
 	if errors.Is(err, usecase.ErrRequestNotFound) {
 		return fiber.NewError(fiber.StatusNotFound, constants.RequestNotFound)
 	}
+	if errors.Is(err, usecase.ErrAllocationExceeded) {
+		return fiber.NewError(fiber.StatusConflict, constants.AllocationExceeded)
+	}
 	if errors.Is(err, usecase.ErrNoCooperative) {
 		return fiber.NewError(fiber.StatusForbidden, "account is not linked to a cooperative")
 	}

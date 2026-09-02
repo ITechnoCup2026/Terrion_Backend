@@ -177,6 +177,62 @@ func TestRdkkCreateInputOrderRefusesAnAccountWithNoCooperative(t *testing.T) {
 	}
 }
 
+func TestRdkkListInputOrdersReturnsTheOrderWithItsLines(t *testing.T) {
+	db, user := rdkkFixture(t)
+	useCase := rdkkUseCase(t, db)
+
+	created, err := useCase.CreateInputOrder(context.Background(), user, projectionNow)
+	if err != nil {
+		t.Fatalf("CreateInputOrder: %v", err)
+	}
+
+	orders, err := useCase.ListInputOrders(context.Background(), user)
+	if err != nil {
+		t.Fatalf("ListInputOrders: %v", err)
+	}
+	if len(orders) != 1 {
+		t.Fatalf("len(orders) = %d, want 1", len(orders))
+	}
+	if orders[0].Order.ID != created.OrderID {
+		t.Errorf("Order.ID = %q, want %q", orders[0].Order.ID, created.OrderID)
+	}
+	if orders[0].Order.Status != constants.OrderDraft {
+		t.Errorf("Status = %q, want %q", orders[0].Order.Status, constants.OrderDraft)
+	}
+	if len(orders[0].Lines) != 2 {
+		t.Errorf("len(Lines) = %d, want 2", len(orders[0].Lines))
+	}
+}
+
+func TestRdkkListInputOrdersExcludesAnotherCooperatives(t *testing.T) {
+	db, user := rdkkFixture(t)
+	useCase := rdkkUseCase(t, db)
+
+	if _, err := useCase.CreateInputOrder(context.Background(), user, projectionNow); err != nil {
+		t.Fatalf("CreateInputOrder: %v", err)
+	}
+
+	stranger := otherCoop
+	orders, err := useCase.ListInputOrders(
+		context.Background(), &entity.AppUser{ID: "pengurus-2", Role: constants.RolePengurus, CooperativeID: &stranger})
+	if err != nil {
+		t.Fatalf("ListInputOrders: %v", err)
+	}
+	if len(orders) != 0 {
+		t.Errorf("len(orders) = %d, want 0 for another cooperative", len(orders))
+	}
+}
+
+func TestRdkkListInputOrdersRefusesAnAccountWithNoCooperative(t *testing.T) {
+	db, _ := rdkkFixture(t)
+	buyer := &entity.AppUser{ID: "buyer-1", Role: constants.RoleBuyer}
+
+	_, err := rdkkUseCase(t, db).ListInputOrders(context.Background(), buyer)
+	if !errors.Is(err, ErrNoCooperative) {
+		t.Errorf("err = %v, want ErrNoCooperative", err)
+	}
+}
+
 func TestDefaultSeasonReachesBackAYear(t *testing.T) {
 	season := DefaultSeason(projectionNow)
 

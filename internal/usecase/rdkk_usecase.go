@@ -151,6 +151,48 @@ func (u *RdkkUseCase) CreateInputOrder(
 	return CreatedInputOrder{OrderID: order.ID, Lines: len(lines)}, nil
 }
 
+type InputOrderWithLines struct {
+	Order entity.InputOrder
+	Lines []entity.InputOrderLine
+}
+
+func (u *RdkkUseCase) ListInputOrders(
+	ctx context.Context, user *entity.AppUser,
+) ([]InputOrderWithLines, error) {
+	if user.CooperativeID == nil {
+		return nil, ErrNoCooperative
+	}
+	db := u.DB.WithContext(ctx)
+
+	orders, err := u.InputOrderRepository.FindByCooperativeID(db, *user.CooperativeID)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"reading input orders of cooperative %s: %w", *user.CooperativeID, err)
+	}
+	if len(orders) == 0 {
+		return []InputOrderWithLines{}, nil
+	}
+
+	orderIDs := make([]string, len(orders))
+	for i, order := range orders {
+		orderIDs[i] = order.ID
+	}
+	lines, err := u.InputOrderRepository.FindLinesByOrderIDs(db, orderIDs)
+	if err != nil {
+		return nil, fmt.Errorf("reading input order lines: %w", err)
+	}
+	linesByOrder := make(map[string][]entity.InputOrderLine, len(orders))
+	for _, line := range lines {
+		linesByOrder[line.InputOrderID] = append(linesByOrder[line.InputOrderID], line)
+	}
+
+	result := make([]InputOrderWithLines, len(orders))
+	for i, order := range orders {
+		result[i] = InputOrderWithLines{Order: order, Lines: linesByOrder[order.ID]}
+	}
+	return result, nil
+}
+
 func (u *RdkkUseCase) aggregateSeason(
 	ctx context.Context, cooperativeID string, season Season,
 ) (rdkk.Aggregate, error) {

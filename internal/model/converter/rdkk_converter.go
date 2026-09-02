@@ -10,6 +10,26 @@ import (
 	"terrion-backend/internal/usecase"
 )
 
+func InputOrdersToResponse(orders []usecase.InputOrderWithLines) []model.InputOrderResponse {
+	response := make([]model.InputOrderResponse, len(orders))
+	for i, order := range orders {
+		lines := make([]model.InputOrderLineResponse, len(order.Lines))
+		for j, line := range order.Lines {
+			lines[j] = model.InputOrderLineResponse{
+				Item: line.Item, Quantity: line.Quantity, Unit: line.Unit,
+			}
+		}
+		response[i] = model.InputOrderResponse{
+			ID:          order.Order.ID,
+			SeasonLabel: order.Order.SeasonLabel,
+			Status:      string(order.Order.Status),
+			CreatedAt:   order.Order.CreatedAt.UTC().Format(time.RFC3339),
+			Lines:       lines,
+		}
+	}
+	return response
+}
+
 func RdkkToResponse(document rdkk.Document, season usecase.Season) *model.RdkkResponse {
 	response := &model.RdkkResponse{
 		Meta: model.RdkkMetaResponse{
