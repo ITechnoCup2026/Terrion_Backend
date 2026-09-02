@@ -37,3 +37,17 @@ type CreateInputOrderResponse struct {
 	OrderID string `json:"order_id"`
 	Lines   int    `json:"lines"`
 }
+
+type InputOrderLineResponse struct {
+	Item     string  `json:"item"`
+	Quantity float64 `json:"quantity"`
+	Unit     string  `json:"unit"`
+}
+
+type InputOrderResponse struct {
+	ID          string                   `json:"id"`
+	SeasonLabel string                   `json:"season_label"`
+	Status      string                   `json:"status"`
+	CreatedAt   string                   `json:"created_at"`
+	Lines       []InputOrderLineResponse `json:"lines"`
+}

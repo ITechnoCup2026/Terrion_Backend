@@ -21,9 +21,10 @@ import (
 )
 
 var (
-	ErrListingUnknown  = errors.New(constants.ListingUnknown)
-	ErrListingGone     = errors.New(constants.ListingGone)
-	ErrRequestNotFound = errors.New(constants.RequestNotFound)
+	ErrListingUnknown     = errors.New(constants.ListingUnknown)
+	ErrListingGone        = errors.New(constants.ListingGone)
+	ErrRequestNotFound    = errors.New(constants.RequestNotFound)
+	ErrAllocationExceeded = errors.New(constants.AllocationExceeded)
 )
 
 type SupplyRequestUseCase struct {
@@ -130,6 +131,22 @@ func (u *SupplyRequestUseCase) Respond(
 		return ErrNoCooperative
 	}
 
+	if request.Decision == constants.RequestAccepted {
+		stored := new(entity.SupplyContractRequest)
+		if err := u.Repository.FindById(u.DB.WithContext(ctx), stored, requestID); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrRequestNotFound
+			}
+			return fmt.Errorf("reading supply request %s: %w", requestID, err)
+		}
+		if stored.CooperativeID != *user.CooperativeID {
+			return ErrRequestNotFound
+		}
+		if err := u.checkAllocation(ctx, stored); err != nil {
+			return err
+		}
+	}
+
 	respondedAt := now.UTC()
 
 	tx := u.DB.WithContext(ctx).Begin()
@@ -152,6 +169,65 @@ func (u *SupplyRequestUseCase) Respond(
 		return fmt.Errorf("committing answer to supply request %s: %w", requestID, err)
 	}
 	return nil
+}
+
+// checkAllocation is the invariant TERRION.md documents as missing: a
+// cooperative accepting requests one at a time could otherwise commit more
+// tonnage against one harvest window than it will ever have.
+//
+// ponytail: reads the current tally outside the update transaction below, so
+// two accepts racing the same window could both pass this check. Acceptable
+// here -- nothing else in this codebase locks rows for an invariant either --
+// upgrade to SELECT ... FOR UPDATE if concurrent pengurus answering the same
+// window in practice turns out to matter.
+func (u *SupplyRequestUseCase) checkAllocation(
+	ctx context.Context, request *entity.SupplyContractRequest,
+) error {
+	// Anchored on the request's own window, not real time, so a window that
+	// has since scrolled outside the catalog's rolling horizon can still be
+	// found. The tradeoff: Tonnes reflects today's projection, not whatever it
+	// was when the request was made -- the same live-recompute every listing
+	// in this system already accepts.
+	listings, err := u.Catalog.LoadForCooperative(ctx, request.CooperativeID, request.WindowStart)
+	if err != nil {
+		return err
+	}
+
+	listing, found := findListingForWindow(listings, request.CommodityID, request.WindowStart)
+	if !found {
+		// The planting data behind this request's projection has since
+		// changed (block edited or removed) -- there is nothing reliable left
+		// to cap against, so let the cooperative decide.
+		return nil
+	}
+
+	accepted, err := u.Repository.SumAcceptedVolumeKg(
+		u.DB.WithContext(ctx), request.CooperativeID, request.CommodityID,
+		request.WindowStart, request.WindowEnd, request.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("summing accepted volume for request %s: %w", request.ID, err)
+	}
+
+	// Rounded the same way VolumeKg was at creation (see Create above), so a
+	// request for exactly the whole projection does not overshoot it by the
+	// sub-kilogram slop of an unrounded tonnes-to-kg conversion.
+	capacityKg := math.Round(listing.Tonnes * constants.KgPerTonne)
+	if accepted+request.VolumeKg > capacityKg {
+		return ErrAllocationExceeded
+	}
+	return nil
+}
+
+func findListingForWindow(
+	listings []catalog.Listing, commodityID string, windowStart time.Time,
+) (catalog.Listing, bool) {
+	for _, listing := range listings {
+		if listing.CommodityID == commodityID && listing.WeekStart.Equal(windowStart) {
+			return listing, true
+		}
+	}
+	return catalog.Listing{}, false
 }
 
 func findListing(listings []catalog.Listing, listingID string) (catalog.Listing, bool) {

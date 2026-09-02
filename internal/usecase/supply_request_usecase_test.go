@@ -272,6 +272,45 @@ func TestRespondToRequestStampsTheDecisionAndTheTime(t *testing.T) {
 	}
 }
 
+func TestRespondToRequestKeepsAcceptedTonnageWithinTheProjection(t *testing.T) {
+	db, buyer := commerceFixture(t)
+	listing := onlyListing(t, db)
+	useCase := supplyRequestUseCase(t, db)
+	pengurus := pengurusOf(homeCoop)
+
+	first := createRequest(listing.ID)
+	first.VolumeTonnes = listing.Tonnes
+	storedFirst, err := useCase.Create(context.Background(), buyer, first, projectionNow)
+	if err != nil {
+		t.Fatalf("Create first: %v", err)
+	}
+	if err := useCase.Respond(context.Background(), pengurus, storedFirst.ID,
+		&model.RespondToRequestRequest{Decision: constants.RequestAccepted}, projectionNow); err != nil {
+		t.Fatalf("accepting the whole projection should succeed: %v", err)
+	}
+
+	second := createRequest(listing.ID)
+	second.VolumeTonnes = 0.01
+	storedSecond, err := useCase.Create(context.Background(), buyer, second, projectionNow)
+	if err != nil {
+		t.Fatalf("Create second: %v", err)
+	}
+
+	err = useCase.Respond(context.Background(), pengurus, storedSecond.ID,
+		&model.RespondToRequestRequest{Decision: constants.RequestAccepted}, projectionNow)
+	if !errors.Is(err, ErrAllocationExceeded) {
+		t.Errorf("err = %v, want ErrAllocationExceeded once the projection is fully committed", err)
+	}
+
+	unchanged := new(entity.SupplyContractRequest)
+	if err := db.Where("id = ?", storedSecond.ID).Take(unchanged).Error; err != nil {
+		t.Fatalf("reading back the second request: %v", err)
+	}
+	if unchanged.Status != constants.RequestPending {
+		t.Errorf("Status = %q, want it left pending after the cap refused it", unchanged.Status)
+	}
+}
+
 func TestListSupplyRequestsSplitsByWhoIsAsking(t *testing.T) {
 	db, buyer := commerceFixture(t)
 	listing := onlyListing(t, db)

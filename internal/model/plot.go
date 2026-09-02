@@ -53,6 +53,10 @@ type HarvestWindowResponse struct {
 	Basis          string               `json:"basis"`
 	Plausibility   string               `json:"plausibility"`
 	CumulativeGdd  []CumulativeGddPoint `json:"cumulative_gdd,omitempty"`
+	// Nil once GddAccumulated already clears GddRequired within known
+	// weather. Otherwise the ISO date CumulativeGdd first turns from an
+	// observed/forecast reading into a climatology projection.
+	ProjectedFrom *string `json:"projected_from,omitempty"`
 }
 
 type PlotSummaryResponse struct {
