@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/sirupsen/logrus"
@@ -354,5 +355,142 @@ func TestSplitBlockLeavesTheBlockAloneWhenRefused(t *testing.T) {
 	}
 	if original.AreaHa != 1 {
 		t.Errorf("AreaHa = %v, want the untouched 1", original.AreaHa)
+	}
+}
+
+// Yesterday, as an ISO date. Derived from the clock rather than hard-coded so
+// the "not in the future" rule is exercised against the same `now` the use case
+// reads, whenever the suite happens to run.
+func recentDate(daysAgo int) string {
+	return time.Now().UTC().AddDate(0, 0, -daysAgo).Format(constants.ISODateLayout)
+}
+
+func harvestRequest() *model.RecordHarvestRequest {
+	price := 5200.0
+	return &model.RecordHarvestRequest{
+		ActualHarvestDate: recentDate(1),
+		ActualYieldKg:     7400,
+		ActualPricePerKg:  &price,
+	}
+}
+
+func TestRecordHarvestStoresWhatCameOffTheField(t *testing.T) {
+	db, user := plotFixture(t)
+
+	result, err := plotUseCase(t, db).
+		RecordHarvest(context.Background(), user, "block-growing", harvestRequest())
+	if err != nil {
+		t.Fatalf("RecordHarvest: %v", err)
+	}
+	if result.BlockID != "block-growing" || result.PlotID != "plot-home" {
+		t.Errorf("result = %+v, want block-growing on plot-home", result)
+	}
+
+	block := new(entity.Block)
+	if err := db.Where("id = ?", "block-growing").Take(block).Error; err != nil {
+		t.Fatalf("reading back the block: %v", err)
+	}
+	if block.ActualHarvestDate == nil {
+		t.Fatal("ActualHarvestDate is still nil: the harvest was not recorded")
+	}
+	if got := block.ActualHarvestDate.Format(constants.ISODateLayout); got != recentDate(1) {
+		t.Errorf("ActualHarvestDate = %s, want %s", got, recentDate(1))
+	}
+	if block.ActualYieldKg == nil || *block.ActualYieldKg != 7400 {
+		t.Errorf("ActualYieldKg = %v, want 7400", block.ActualYieldKg)
+	}
+	if block.ActualPricePerKg == nil || *block.ActualPricePerKg != 5200 {
+		t.Errorf("ActualPricePerKg = %v, want 5200", block.ActualPricePerKg)
+	}
+}
+
+// The weather client in this harness is deliberately unreachable, so the refit
+// cannot run. The harvest must still be recorded: it is the fact the farmer
+// reported, and the calibration is derived from it rather than the other way
+// round.
+func TestRecordHarvestSurvivesAFailedRefit(t *testing.T) {
+	db, user := plotFixture(t)
+
+	result, err := plotUseCase(t, db).
+		RecordHarvest(context.Background(), user, "block-growing", harvestRequest())
+	if err != nil {
+		t.Fatalf("RecordHarvest: %v", err)
+	}
+
+	block := new(entity.Block)
+	if err := db.Where("id = ?", "block-growing").Take(block).Error; err != nil {
+		t.Fatalf("reading back the block: %v", err)
+	}
+	if block.ActualHarvestDate == nil {
+		t.Error("a failed refit rolled back the harvest, which must never happen")
+	}
+	_ = result
+}
+
+func TestRecordHarvestRefusals(t *testing.T) {
+	tests := []struct {
+		name    string
+		blockID string
+		mutate  func(*model.RecordHarvestRequest)
+		want    error
+	}{
+		{"block of another cooperative", "block-other-coop", nil, ErrHarvestBlockGone},
+		{"block that does not exist", "block-ghost", nil, ErrHarvestBlockGone},
+		{"already recorded", "block-harvested", nil, ErrHarvestAlreadyRecorded},
+		{
+			"before the planting date", "block-growing",
+			func(r *model.RecordHarvestRequest) { r.ActualHarvestDate = "2026-01-05" },
+			ErrHarvestBeforePlanting,
+		},
+		{
+			"in the future", "block-growing",
+			func(r *model.RecordHarvestRequest) {
+				r.ActualHarvestDate = time.Now().UTC().AddDate(0, 0, 3).
+					Format(constants.ISODateLayout)
+			},
+			ErrHarvestInFuture,
+		},
+		{
+			"paid before it was cut", "block-growing",
+			func(r *model.RecordHarvestRequest) {
+				earlier := recentDate(30)
+				r.PaymentReceivedDate = &earlier
+			},
+			ErrPaymentBeforeHarvest,
+		},
+	}
+
+	for _, test := range tests {
+		db, user := plotFixture(t)
+		request := harvestRequest()
+		if test.mutate != nil {
+			test.mutate(request)
+		}
+
+		_, err := plotUseCase(t, db).
+			RecordHarvest(context.Background(), user, test.blockID, request)
+
+		if !errors.Is(err, test.want) {
+			t.Errorf("%s: err = %v, want %v", test.name, err, test.want)
+		}
+	}
+}
+
+func TestRecordHarvestLeavesTheBlockAloneWhenRefused(t *testing.T) {
+	db, user := plotFixture(t)
+	request := harvestRequest()
+	request.ActualHarvestDate = "2026-01-05"
+
+	if _, err := plotUseCase(t, db).
+		RecordHarvest(context.Background(), user, "block-growing", request); err == nil {
+		t.Fatal("RecordHarvest accepted a date before the planting date")
+	}
+
+	block := new(entity.Block)
+	if err := db.Where("id = ?", "block-growing").Take(block).Error; err != nil {
+		t.Fatalf("reading back the block: %v", err)
+	}
+	if block.ActualHarvestDate != nil || block.ActualYieldKg != nil {
+		t.Error("a refused harvest still wrote to the block")
 	}
 }

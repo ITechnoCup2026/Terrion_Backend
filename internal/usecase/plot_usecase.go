@@ -27,6 +27,17 @@ var (
 	ErrAreaTooLarge  = errors.New("plantings exceed the maximum plot area")
 )
 
+// Why a harvest could not be recorded. Sentinels rather than a refusal struct
+// like plots.SplitRefusal, because none of these needs to hand a number back:
+// the code alone says what happened.
+var (
+	ErrHarvestBlockGone       = errors.New("block is not in this cooperative")
+	ErrHarvestAlreadyRecorded = errors.New("block already has a recorded harvest")
+	ErrHarvestBeforePlanting  = errors.New("harvest date precedes the planting date")
+	ErrHarvestInFuture        = errors.New("harvest date is in the future")
+	ErrPaymentBeforeHarvest   = errors.New("payment date precedes the harvest date")
+)
+
 type PlotUseCase struct {
 	DB                  *gorm.DB
 	Log                 *logrus.Logger
@@ -442,4 +453,133 @@ func (u *PlotUseCase) Catalogue(
 	}
 
 	return commodities, varieties, nil
+}
+
+type RecordHarvestResult struct {
+	PlotID    string
+	BlockID   string
+	VarietyID string
+	// Nil when there was nothing to fit -- see RefitCalibration.
+	Calibration *entity.Calibration
+	// Carried so the response can name what the model learned about, rather
+	// than handing the browser a pair of ids to look up again.
+	VarietyName   string
+	CommodityName string
+}
+
+// RecordHarvest closes the loop the predictor has always been reading from.
+//
+// Until this existed, block.actual_harvest_date could only be set by seed
+// data, so the calibration table was permanently empty and every prediction
+// ran on the base model for ever. One kader typing what actually came off a
+// field is what turns the projection from a fixed formula into something that
+// gets better where it is used.
+//
+// The refit runs after the write and inside no transaction, deliberately: the
+// harvest is a fact the cooperative reported and must survive, whereas the
+// calibration is derived and can be recomputed from those same facts on the
+// next recording. Rolling back a farmer's entry because a weather fetch timed
+// out would be the wrong way round.
+func (u *PlotUseCase) RecordHarvest(
+	ctx context.Context, user *entity.AppUser, blockID string,
+	request *model.RecordHarvestRequest,
+) (RecordHarvestResult, error) {
+	if err := u.Validate.Struct(request); err != nil {
+		return RecordHarvestResult{}, err
+	}
+	if user.CooperativeID == nil {
+		return RecordHarvestResult{}, ErrNoCooperative
+	}
+
+	harvestDate, err := agronomy.UTCDate(request.ActualHarvestDate)
+	if err != nil {
+		return RecordHarvestResult{}, err
+	}
+
+	var paymentDate *time.Time
+	if request.PaymentReceivedDate != nil {
+		parsed, err := agronomy.UTCDate(*request.PaymentReceivedDate)
+		if err != nil {
+			return RecordHarvestResult{}, err
+		}
+		paymentDate = &parsed
+	}
+
+	db := u.DB.WithContext(ctx)
+
+	block, err := u.BlockRepository.FindInCooperative(db, blockID, *user.CooperativeID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return RecordHarvestResult{}, ErrHarvestBlockGone
+		}
+		return RecordHarvestResult{}, fmt.Errorf("reading block %s: %w", blockID, err)
+	}
+
+	// Recording twice would put a second observation of the same field into the
+	// calibration and let one harvest count as two.
+	if block.ActualHarvestDate != nil {
+		return RecordHarvestResult{}, ErrHarvestAlreadyRecorded
+	}
+	if harvestDate.Before(block.PlantingDate) {
+		return RecordHarvestResult{}, ErrHarvestBeforePlanting
+	}
+
+	now := time.Now().UTC()
+	if harvestDate.After(now) {
+		return RecordHarvestResult{}, ErrHarvestInFuture
+	}
+	if paymentDate != nil && paymentDate.Before(harvestDate) {
+		return RecordHarvestResult{}, ErrPaymentBeforeHarvest
+	}
+
+	if err := db.Model(&entity.Block{}).Where("id = ?", block.ID).Updates(map[string]any{
+		"actual_harvest_date":   harvestDate,
+		"actual_yield_kg":       request.ActualYieldKg,
+		"actual_price_per_kg":   request.ActualPricePerKg,
+		"payment_received_date": paymentDate,
+	}).Error; err != nil {
+		return RecordHarvestResult{}, fmt.Errorf("recording harvest of block %s: %w", block.ID, err)
+	}
+
+	result := RecordHarvestResult{
+		PlotID:    block.PlotID,
+		BlockID:   block.ID,
+		VarietyID: block.VarietyID,
+	}
+
+	// After the write, so this harvest is one of the observations it fits over.
+	calibration, err := u.Projection.RefitCalibration(
+		ctx, *user.CooperativeID, block.VarietyID, now)
+	if err != nil {
+		// Logged and swallowed. The harvest IS recorded, and telling the kader
+		// otherwise would have them enter it again.
+		u.Log.Errorf("refitting calibration of variety %s: %v", block.VarietyID, err)
+		return result, nil
+	}
+
+	result.Calibration = calibration
+	if calibration != nil {
+		result.VarietyName, result.CommodityName = u.namesOfVariety(db, block.VarietyID)
+	}
+	return result, nil
+}
+
+// What a variety and its commodity are called, best effort.
+//
+// Only ever used to label a calibration the reader is being shown. A missing
+// name leaves the label thinner, which is a far better outcome than failing a
+// harvest that is already recorded.
+func (u *PlotUseCase) namesOfVariety(db *gorm.DB, varietyID string) (string, string) {
+	variety := new(entity.Variety)
+	if err := u.VarietyRepository.FindById(db, variety, varietyID); err != nil {
+		u.Log.Warnf("naming variety %s: %v", varietyID, err)
+		return "", ""
+	}
+
+	commodity := new(entity.Commodity)
+	if err := u.CommodityRepository.FindById(db, commodity, variety.CommodityID); err != nil {
+		u.Log.Warnf("naming commodity %s: %v", variety.CommodityID, err)
+		return variety.Name, ""
+	}
+	return variety.Name, commodity.Name
 }

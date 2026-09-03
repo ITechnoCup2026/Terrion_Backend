@@ -302,3 +302,121 @@ func keysOf(set map[string]bool) []string {
 	}
 	return keys
 }
+
+// RefitCalibration re-derives one variety's day offset from every harvest this
+// cooperative has recorded for it, and stores the result.
+//
+// The comparison is against the BASE model -- PredictHarvest is called with no
+// calibration -- because the offset has to mean "how far the uncalibrated
+// prediction was out". Feeding the current calibration back in would measure
+// the residual of an already-corrected prediction, and drive the offset toward
+// zero on every refit until the model had learned nothing at all.
+//
+// Nothing is stored per prediction. The window is recomputed from the planting
+// date, the variety and the weather that actually fell, all of which are still
+// on record -- so there is no predicted_mid column to keep in step with the
+// predictor, and a stored prediction cannot silently disagree with the model
+// that made it.
+//
+// Returns nil when the variety has no recorded harvest with usable weather.
+// There is nothing to say then, and writing a zero offset would claim the model
+// had been checked and found exactly right.
+func (u *ProjectionUseCase) RefitCalibration(
+	ctx context.Context, cooperativeID, varietyID string, now time.Time,
+) (*entity.Calibration, error) {
+	db := u.DB.WithContext(ctx)
+
+	plots, err := u.PlotRepository.FindByCooperativeID(db, cooperativeID)
+	if err != nil {
+		return nil, fmt.Errorf("reading plots of cooperative %s: %w", cooperativeID, err)
+	}
+	if len(plots) == 0 {
+		return nil, nil
+	}
+
+	harvested, err := u.BlockRepository.FindHarvestedByPlotIDs(db, plotIDsOf(plots))
+	if err != nil {
+		return nil, fmt.Errorf("reading harvested blocks of %s: %w", cooperativeID, err)
+	}
+
+	blocks := []entity.Block{}
+	for _, block := range harvested {
+		if block.VarietyID == varietyID && block.ActualHarvestDate != nil {
+			blocks = append(blocks, block)
+		}
+	}
+	if len(blocks) == 0 {
+		return nil, nil
+	}
+
+	varieties, err := u.varietiesFor(db, blocks)
+	if err != nil {
+		return nil, err
+	}
+	variety, known := varieties[varietyID]
+	if !known {
+		return nil, nil
+	}
+
+	weatherByCell, err := u.weatherFor(ctx, plots, earliestPlanting(blocks), now)
+	if err != nil {
+		return nil, err
+	}
+
+	cellOfPlot := map[string]weather.GridCell{}
+	for _, plot := range plots {
+		cellOfPlot[plot.ID] = weather.GridCell{GridLat: plot.GridLat, GridLng: plot.GridLng}
+	}
+
+	today := agronomy.ToISODate(now)
+	observations := []agronomy.CalibrationObservation{}
+
+	for _, block := range blocks {
+		cell, placed := cellOfPlot[block.PlotID]
+		if !placed {
+			continue
+		}
+		cellWeather, stored := weatherByCell[cell]
+		if !stored {
+			continue
+		}
+
+		observed, forecast := splitOnToday(cellWeather.Observed, today)
+
+		window, err := agronomy.PredictHarvest(agronomy.HarvestInput{
+			PlantingDate: block.PlantingDate,
+			Observed:     observed,
+			Forecast:     forecast,
+			Climatology:  cellWeather.Normals,
+			Variety:      variety,
+			Calibration:  nil,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("re-predicting block %s: %w", block.ID, err)
+		}
+
+		observations = append(observations, agronomy.CalibrationObservation{
+			PredictedMid: window.Start.Add(window.End.Sub(window.Start) / 2),
+			Actual:       *block.ActualHarvestDate,
+		})
+	}
+
+	if len(observations) == 0 {
+		return nil, nil
+	}
+
+	fitted := agronomy.FitCalibration(observations)
+	row := &entity.Calibration{
+		CooperativeID: cooperativeID,
+		VarietyID:     varietyID,
+		OffsetDays:    fitted.OffsetDays,
+		NObservations: fitted.NObservations,
+		ResidualSd:    fitted.ResidualSd,
+		UpdatedAt:     now,
+	}
+
+	if err := u.CalibrationRepository.Upsert(db, row); err != nil {
+		return nil, fmt.Errorf("storing calibration of variety %s: %w", varietyID, err)
+	}
+	return row, nil
+}

@@ -22,6 +22,17 @@ const (
 	SplitBlockHarvested   = "split_block_harvested"
 )
 
+// Why a harvest could not be recorded. Each is a fact about the block or the
+// date rather than a validation message, so the browser can say something
+// specific instead of "invalid input".
+const (
+	HarvestBlockAlreadyGone  = "harvest_block_already_gone"
+	HarvestAlreadyRecorded   = "harvest_already_recorded"
+	HarvestBeforePlanting    = "harvest_before_planting"
+	HarvestInFuture          = "harvest_in_future"
+	HarvestPaymentBeforeCrop = "harvest_payment_before_crop"
+)
+
 const (
 	SubsidyCapHa = 2.0
 	KgPerSack    = 50

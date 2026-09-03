@@ -139,3 +139,32 @@ func CommodityCatalogueToResponse(
 	}
 	return responses
 }
+
+// What the cooperative's own harvests have taught the model about one variety.
+//
+// AppliedOffsetDays is the number the predictor actually uses. It is the fitted
+// offset shrunk toward zero by how few harvests back it, which is why a
+// cooperative that has recorded two harvests sees a smaller correction than the
+// raw figure beside it -- and why both are reported rather than just the one
+// that sounds most impressive.
+func CalibrationToResponse(
+	row *entity.Calibration, varietyName, commodityName string,
+) *model.CalibrationResponse {
+	if row == nil {
+		return nil
+	}
+
+	return &model.CalibrationResponse{
+		VarietyID:     row.VarietyID,
+		VarietyName:   varietyName,
+		CommodityName: commodityName,
+		OffsetDays:    row.OffsetDays,
+		AppliedOffsetDays: agronomy.ShrunkOffset(agronomy.Calibration{
+			OffsetDays:    row.OffsetDays,
+			NObservations: row.NObservations,
+			ResidualSd:    row.ResidualSd,
+		}),
+		NObservations: row.NObservations,
+		ResidualSd:    row.ResidualSd,
+	}
+}

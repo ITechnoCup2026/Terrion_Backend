@@ -61,6 +61,10 @@ type DashboardResponse struct {
 	Suggestions []StaggerSuggestionResponse `json:"suggestions"`
 	Upcoming    UpcomingResponse            `json:"upcoming"`
 	Impact      ImpactResponse              `json:"impact"`
+	// Empty until this cooperative records a harvest. Nothing is invented to
+	// fill it: a model that has seen no harvests here has learned nothing here,
+	// and saying so is the point of showing it at all.
+	Calibrations []CalibrationResponse `json:"calibrations"`
 }
 
 type ApplyStaggerRequest struct {

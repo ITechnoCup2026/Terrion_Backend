@@ -56,6 +56,10 @@ func (c *RouteConfig) setupAuthenticatedRoutes() {
 	c.App.Get("/api/plots/:id", auth, c.PlotController.Get)
 	c.App.Post("/api/plots", auth, fieldStaff, c.PlotController.Create)
 	c.App.Post("/api/blocks/:id/split", auth, fieldStaff, c.PlotController.SplitBlock)
+	// Recording what came off a field is field work, so it sits with the same
+	// two roles that may split a block -- and it is what feeds the calibration
+	// every projection on this cooperative is then read through.
+	c.App.Patch("/api/blocks/:id/harvest", auth, fieldStaff, c.PlotController.RecordHarvest)
 	c.App.Get("/api/rdkk", auth, c.RdkkController.Get)
 	c.App.Post("/api/input-orders", auth,
 		middleware.RequireRole(constants.RolePengurus), c.RdkkController.CreateInputOrder)

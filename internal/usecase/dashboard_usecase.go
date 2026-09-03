@@ -60,6 +60,18 @@ type Dashboard struct {
 	UpcomingTonnes float64
 	Impact         agronomy.ImpactFigures
 	Commodities    map[string]string
+	// What this cooperative's own recorded harvests have taught the predictor.
+	// Empty until somebody records one, which is the honest state: a model that
+	// has seen no harvests here has learned nothing here.
+	Calibrations []NamedCalibration
+}
+
+// A stored calibration with the crop it belongs to named, so a dashboard can
+// say "Jagung Bisi-18" instead of showing a reader two UUIDs.
+type NamedCalibration struct {
+	entity.Calibration
+	VarietyName   string
+	CommodityName string
 }
 
 func (u *DashboardUseCase) Load(
@@ -101,6 +113,15 @@ func (u *DashboardUseCase) Load(
 		return Dashboard{}, err
 	}
 
+	// Best effort: a dashboard that cannot name what the model learned is still
+	// a working dashboard, and this is the one figure on it that is decoration
+	// rather than a number somebody acts on.
+	calibrations, err := u.calibrationsOf(db, cooperativeID)
+	if err != nil {
+		u.Log.Errorf("reading calibrations of cooperative %s: %v", cooperativeID, err)
+		calibrations = nil
+	}
+
 	return Dashboard{
 		Weeks: dashboard.WeeklyProjection(
 			projection.Projections, now, constants.DefaultHorizonWeeks),
@@ -111,6 +132,7 @@ func (u *DashboardUseCase) Load(
 		UpcomingTonnes: dashboard.UpcomingTonnes(upcoming),
 		Impact:         impact,
 		Commodities:    commodities,
+		Calibrations:   calibrations,
 	}, nil
 }
 
@@ -328,4 +350,58 @@ func parseStaggerLog(raw json.RawMessage) []agronomy.StaggerRecord {
 		})
 	}
 	return records
+}
+
+// What this cooperative's harvests have taught the model, with the crops named.
+//
+// Read straight from the calibration table rather than refitted here: fitting
+// happens when a harvest is recorded, and a dashboard load must not turn into
+// a weather fetch per variety.
+func (u *DashboardUseCase) calibrationsOf(
+	db *gorm.DB, cooperativeID string,
+) ([]NamedCalibration, error) {
+	rows, err := u.Projection.CalibrationRepository.FindByCooperativeID(db, cooperativeID)
+	if err != nil {
+		return nil, fmt.Errorf("reading calibrations: %w", err)
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+
+	varietyIDs := make([]string, 0, len(rows))
+	for _, row := range rows {
+		varietyIDs = append(varietyIDs, row.VarietyID)
+	}
+
+	varieties, err := u.Projection.VarietyRepository.FindByIDs(db, varietyIDs)
+	if err != nil {
+		return nil, fmt.Errorf("reading varieties: %w", err)
+	}
+
+	varietyByID := make(map[string]entity.Variety, len(varieties))
+	commodityIDs := make([]string, 0, len(varieties))
+	for _, variety := range varieties {
+		varietyByID[variety.ID] = variety
+		commodityIDs = append(commodityIDs, variety.CommodityID)
+	}
+
+	commodities, err := u.CommodityRepository.FindByIDs(db, commodityIDs)
+	if err != nil {
+		return nil, fmt.Errorf("reading commodities: %w", err)
+	}
+	commodityName := make(map[string]string, len(commodities))
+	for _, commodity := range commodities {
+		commodityName[commodity.ID] = commodity.Name
+	}
+
+	named := make([]NamedCalibration, 0, len(rows))
+	for _, row := range rows {
+		variety := varietyByID[row.VarietyID]
+		named = append(named, NamedCalibration{
+			Calibration:   row,
+			VarietyName:   variety.Name,
+			CommodityName: commodityName[variety.CommodityID],
+		})
+	}
+	return named, nil
 }

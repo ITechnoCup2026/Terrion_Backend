@@ -38,6 +38,42 @@ type SplitRefusalResponse struct {
 	MaxTakeableHa float64 `json:"max_takeable_ha,omitempty"`
 }
 
+// What a kader types when a block comes in. The price and the payment date are
+// optional because they are frequently not known on the day: the crop leaves
+// the field before the buyer settles, and forcing a number there would mean
+// inventing one.
+type RecordHarvestRequest struct {
+	ActualHarvestDate   string   `json:"actual_harvest_date" validate:"required,datetime=2006-01-02"`
+	ActualYieldKg       float64  `json:"actual_yield_kg" validate:"required,gt=0"`
+	ActualPricePerKg    *float64 `json:"actual_price_per_kg" validate:"omitempty,gte=0"`
+	PaymentReceivedDate *string  `json:"payment_received_date" validate:"omitempty,datetime=2006-01-02"`
+}
+
+// How far this cooperative's own harvests have moved the model for one variety.
+//
+// OffsetDays is what the recorded harvests say on their own; AppliedOffsetDays
+// is what the predictor actually uses, after shrinking the estimate toward the
+// base model in proportion to how few observations back it. Both are reported,
+// because the gap between them IS the honesty: two harvests do not get to move
+// a prediction as far as twenty do.
+type CalibrationResponse struct {
+	VarietyID         string  `json:"variety_id"`
+	VarietyName       string  `json:"variety_name"`
+	CommodityName     string  `json:"commodity_name"`
+	OffsetDays        float64 `json:"offset_days"`
+	AppliedOffsetDays float64 `json:"applied_offset_days"`
+	NObservations     int     `json:"n_observations"`
+	ResidualSd        float64 `json:"residual_sd"`
+}
+
+type RecordHarvestResponse struct {
+	BlockID string `json:"block_id"`
+	PlotID  string `json:"plot_id"`
+	// Nil when the recorded harvest was the first for its variety and there is
+	// nothing yet to say about the model having learned anything.
+	Calibration *CalibrationResponse `json:"calibration"`
+}
+
 type CumulativeGddPoint struct {
 	Date string  `json:"date"`
 	Gdd  float64 `json:"gdd"`
