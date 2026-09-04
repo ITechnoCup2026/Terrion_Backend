@@ -5,17 +5,24 @@ import (
 	"errors"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 
+	"terrion-backend/internal/agronomy"
 	"terrion-backend/internal/constants"
 	"terrion-backend/internal/entity"
 	"terrion-backend/internal/model"
 	"terrion-backend/internal/plots"
 	"terrion-backend/internal/repository"
 	"terrion-backend/internal/weather"
+)
+
+const (
+	pricePanelProvince = "Jawa Barat"
+	pricePanelSource   = "SINTETIS — panel uji"
 )
 
 func plotUseCase(t *testing.T, db *gorm.DB) *PlotUseCase {
@@ -36,7 +43,8 @@ func plotUseCase(t *testing.T, db *gorm.DB) *PlotUseCase {
 	return NewPlotUseCase(db, log, validator.New(),
 		&repository.PlotRepository{}, &repository.BlockRepository{},
 		&repository.MemberRepository{}, &repository.CommodityRepository{},
-		&repository.VarietyRepository{}, projection, weatherUseCase)
+		&repository.VarietyRepository{}, &repository.CooperativeRepository{},
+		&repository.ReferencePriceRepository{}, projection, weatherUseCase)
 }
 
 func plotFixture(t *testing.T) (*gorm.DB, *entity.AppUser) {
@@ -61,9 +69,46 @@ func plotFixture(t *testing.T) (*gorm.DB, *entity.AppUser) {
 		t.Fatalf("seeding commodity: %v", err)
 	}
 
+	seedPricePanel(t, db)
+
 	cooperativeID := homeCoop
 	return db, &entity.AppUser{
 		ID: "user-1", Role: constants.RoleKader, CooperativeID: &cooperativeID,
+	}
+}
+
+// The cooperative the plot belongs to, plus three years of weekly maize prices
+// for its province -- shaped like the real seed so a harvest window projected
+// anywhere in the coming year has a week to look back at.
+func seedPricePanel(t *testing.T, db *gorm.DB) {
+	t.Helper()
+
+	if err := db.AutoMigrate(&entity.Cooperative{}, &entity.ReferencePrice{}); err != nil {
+		t.Fatalf("migrating cooperative and reference price: %v", err)
+	}
+	// The one cooperative row the whole package shares: dashboardFixture and
+	// everything built on it (atlas, public plot) assert on these values.
+	if err := db.Create(&entity.Cooperative{
+		ID: homeCoop, Name: "KUD Subang", Village: "Jalancagak",
+		District: "Subang", Province: pricePanelProvince, Lat: -6.25, Lng: 107.75,
+	}).Error; err != nil {
+		t.Fatalf("seeding cooperative: %v", err)
+	}
+
+	// Mondays, counting back from the Monday of projectionNow's week.
+	monday := projectionNow.AddDate(0, 0, -int(projectionNow.Weekday()-time.Monday))
+	rows := make([]entity.ReferencePrice, 0, 160)
+	for week := 0; week < 160; week++ {
+		rows = append(rows, entity.ReferencePrice{
+			CommodityID: maizeCommodity,
+			Province:    pricePanelProvince,
+			WeekStart:   monday.AddDate(0, 0, -7*week),
+			PricePerKg:  4800 - float64(week),
+			Source:      pricePanelSource,
+		})
+	}
+	if err := db.Create(&rows).Error; err != nil {
+		t.Fatalf("seeding reference prices: %v", err)
 	}
 }
 
@@ -354,5 +399,195 @@ func TestSplitBlockLeavesTheBlockAloneWhenRefused(t *testing.T) {
 	}
 	if original.AreaHa != 1 {
 		t.Errorf("AreaHa = %v, want the untouched 1", original.AreaHa)
+	}
+}
+
+// Yesterday, as an ISO date. Derived from the clock rather than hard-coded so
+// the "not in the future" rule is exercised against the same `now` the use case
+// reads, whenever the suite happens to run.
+func recentDate(daysAgo int) string {
+	return time.Now().UTC().AddDate(0, 0, -daysAgo).Format(constants.ISODateLayout)
+}
+
+func harvestRequest() *model.RecordHarvestRequest {
+	price := 5200.0
+	return &model.RecordHarvestRequest{
+		ActualHarvestDate: recentDate(1),
+		ActualYieldKg:     7400,
+		ActualPricePerKg:  &price,
+	}
+}
+
+func TestRecordHarvestStoresWhatCameOffTheField(t *testing.T) {
+	db, user := plotFixture(t)
+
+	result, err := plotUseCase(t, db).
+		RecordHarvest(context.Background(), user, "block-growing", harvestRequest())
+	if err != nil {
+		t.Fatalf("RecordHarvest: %v", err)
+	}
+	if result.BlockID != "block-growing" || result.PlotID != "plot-home" {
+		t.Errorf("result = %+v, want block-growing on plot-home", result)
+	}
+
+	block := new(entity.Block)
+	if err := db.Where("id = ?", "block-growing").Take(block).Error; err != nil {
+		t.Fatalf("reading back the block: %v", err)
+	}
+	if block.ActualHarvestDate == nil {
+		t.Fatal("ActualHarvestDate is still nil: the harvest was not recorded")
+	}
+	if got := block.ActualHarvestDate.Format(constants.ISODateLayout); got != recentDate(1) {
+		t.Errorf("ActualHarvestDate = %s, want %s", got, recentDate(1))
+	}
+	if block.ActualYieldKg == nil || *block.ActualYieldKg != 7400 {
+		t.Errorf("ActualYieldKg = %v, want 7400", block.ActualYieldKg)
+	}
+	if block.ActualPricePerKg == nil || *block.ActualPricePerKg != 5200 {
+		t.Errorf("ActualPricePerKg = %v, want 5200", block.ActualPricePerKg)
+	}
+}
+
+// The weather client in this harness is deliberately unreachable, so the refit
+// cannot run. The harvest must still be recorded: it is the fact the farmer
+// reported, and the calibration is derived from it rather than the other way
+// round.
+func TestRecordHarvestSurvivesAFailedRefit(t *testing.T) {
+	db, user := plotFixture(t)
+
+	result, err := plotUseCase(t, db).
+		RecordHarvest(context.Background(), user, "block-growing", harvestRequest())
+	if err != nil {
+		t.Fatalf("RecordHarvest: %v", err)
+	}
+
+	block := new(entity.Block)
+	if err := db.Where("id = ?", "block-growing").Take(block).Error; err != nil {
+		t.Fatalf("reading back the block: %v", err)
+	}
+	if block.ActualHarvestDate == nil {
+		t.Error("a failed refit rolled back the harvest, which must never happen")
+	}
+	_ = result
+}
+
+func TestRecordHarvestRefusals(t *testing.T) {
+	tests := []struct {
+		name    string
+		blockID string
+		mutate  func(*model.RecordHarvestRequest)
+		want    error
+	}{
+		{"block of another cooperative", "block-other-coop", nil, ErrHarvestBlockGone},
+		{"block that does not exist", "block-ghost", nil, ErrHarvestBlockGone},
+		{"already recorded", "block-harvested", nil, ErrHarvestAlreadyRecorded},
+		{
+			"before the planting date", "block-growing",
+			func(r *model.RecordHarvestRequest) { r.ActualHarvestDate = "2026-01-05" },
+			ErrHarvestBeforePlanting,
+		},
+		{
+			"in the future", "block-growing",
+			func(r *model.RecordHarvestRequest) {
+				r.ActualHarvestDate = time.Now().UTC().AddDate(0, 0, 3).
+					Format(constants.ISODateLayout)
+			},
+			ErrHarvestInFuture,
+		},
+		{
+			"paid before it was cut", "block-growing",
+			func(r *model.RecordHarvestRequest) {
+				earlier := recentDate(30)
+				r.PaymentReceivedDate = &earlier
+			},
+			ErrPaymentBeforeHarvest,
+		},
+	}
+
+	for _, test := range tests {
+		db, user := plotFixture(t)
+		request := harvestRequest()
+		if test.mutate != nil {
+			test.mutate(request)
+		}
+
+		_, err := plotUseCase(t, db).
+			RecordHarvest(context.Background(), user, test.blockID, request)
+
+		if !errors.Is(err, test.want) {
+			t.Errorf("%s: err = %v, want %v", test.name, err, test.want)
+		}
+	}
+}
+
+func TestRecordHarvestLeavesTheBlockAloneWhenRefused(t *testing.T) {
+	db, user := plotFixture(t)
+	request := harvestRequest()
+	request.ActualHarvestDate = "2026-01-05"
+
+	if _, err := plotUseCase(t, db).
+		RecordHarvest(context.Background(), user, "block-growing", request); err == nil {
+		t.Fatal("RecordHarvest accepted a date before the planting date")
+	}
+
+	block := new(entity.Block)
+	if err := db.Where("id = ?", "block-growing").Take(block).Error; err != nil {
+		t.Fatalf("reading back the block: %v", err)
+	}
+	if block.ActualHarvestDate != nil || block.ActualYieldKg != nil {
+		t.Error("a refused harvest still wrote to the block")
+	}
+}
+
+func TestPlotGetBenchmarksTheHarvestWeekAgainstTheLatestPrice(t *testing.T) {
+	db, user := plotFixture(t)
+
+	detail, err := plotUseCase(t, db).
+		Get(context.Background(), *user.CooperativeID, "plot-home", projectionNow)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+
+	price, priced := detail.Prices["block-growing"]
+	if !priced {
+		t.Fatal("the growing block has no price benchmark")
+	}
+	// The newest Monday in the panel, which is the one seeded at week 0.
+	if price.Latest.PricePerKg != 4800 {
+		t.Errorf("Latest = %v, want 4800", price.Latest.PricePerKg)
+	}
+	if price.Source != pricePanelSource {
+		t.Errorf("Source = %q, want %q", price.Source, pricePanelSource)
+	}
+
+	window, projected := detail.Windows["block-growing"]
+	if !projected {
+		t.Fatal("the growing block has no window to benchmark against")
+	}
+	if price.Seasonal == nil {
+		t.Fatal("the panel covers a year back but no seasonal price was picked")
+	}
+	if got, want := agronomy.ISOWeekKey(price.Seasonal.WeekStart),
+		agronomy.ISOWeekKey(window.Start.AddDate(0, 0, -364)); got != want {
+		t.Errorf("seasonal week = %s, want %s", got, want)
+	}
+}
+
+func TestPlotGetLeavesBlocksUnpricedOutsideThePanelsProvince(t *testing.T) {
+	db, user := plotFixture(t)
+
+	if err := db.Exec(`UPDATE cooperative SET province = ? WHERE id = ?`,
+		"Papua Pegunungan", homeCoop).Error; err != nil {
+		t.Fatalf("moving the cooperative: %v", err)
+	}
+
+	detail, err := plotUseCase(t, db).
+		Get(context.Background(), *user.CooperativeID, "plot-home", projectionNow)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+
+	if len(detail.Prices) != 0 {
+		t.Errorf("Prices = %v, want none: no panel is published there", detail.Prices)
 	}
 }

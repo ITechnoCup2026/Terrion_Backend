@@ -87,6 +87,11 @@ func PlotDetailToResponse(detail usecase.PlotDetail) *model.PlotDetailResponse {
 			tonnes = &expected
 		}
 
+		var price *model.PriceBenchmarkResponse
+		if found, known := detail.Prices[block.ID]; known {
+			price = priceBenchmarkToResponse(found)
+		}
+
 		response.Blocks[i] = model.PlotBlockResponse{
 			ID:             block.ID,
 			Label:          block.Label,
@@ -100,10 +105,31 @@ func PlotDetailToResponse(detail usecase.PlotDetail) *model.PlotDetailResponse {
 			PlantingDate:   agronomy.ToISODate(block.PlantingDate),
 			Window:         HarvestWindowToResponse(window, true),
 			ExpectedTonnes: tonnes,
+			Price:          price,
 		}
 	}
 
 	return response
+}
+
+// Dates go out as ISO strings like every other date in the API.
+func priceBenchmarkToResponse(benchmark agronomy.PriceBenchmark) *model.PriceBenchmarkResponse {
+	response := &model.PriceBenchmarkResponse{
+		Latest: weekPriceToResponse(benchmark.Latest),
+		Source: benchmark.Source,
+	}
+	if benchmark.Seasonal != nil {
+		seasonal := weekPriceToResponse(*benchmark.Seasonal)
+		response.Seasonal = &seasonal
+	}
+	return response
+}
+
+func weekPriceToResponse(week agronomy.WeekPrice) model.WeekPriceResponse {
+	return model.WeekPriceResponse{
+		PricePerKg: week.PricePerKg,
+		WeekStart:  agronomy.ToISODate(week.WeekStart),
+	}
 }
 
 func CommodityCatalogueToResponse(
@@ -138,4 +164,33 @@ func CommodityCatalogueToResponse(
 		}
 	}
 	return responses
+}
+
+// What the cooperative's own harvests have taught the model about one variety.
+//
+// AppliedOffsetDays is the number the predictor actually uses. It is the fitted
+// offset shrunk toward zero by how few harvests back it, which is why a
+// cooperative that has recorded two harvests sees a smaller correction than the
+// raw figure beside it -- and why both are reported rather than just the one
+// that sounds most impressive.
+func CalibrationToResponse(
+	row *entity.Calibration, varietyName, commodityName string,
+) *model.CalibrationResponse {
+	if row == nil {
+		return nil
+	}
+
+	return &model.CalibrationResponse{
+		VarietyID:     row.VarietyID,
+		VarietyName:   varietyName,
+		CommodityName: commodityName,
+		OffsetDays:    row.OffsetDays,
+		AppliedOffsetDays: agronomy.ShrunkOffset(agronomy.Calibration{
+			OffsetDays:    row.OffsetDays,
+			NObservations: row.NObservations,
+			ResidualSd:    row.ResidualSd,
+		}),
+		NObservations: row.NObservations,
+		ResidualSd:    row.ResidualSd,
+	}
 }

@@ -22,6 +22,15 @@ func DashboardToResponse(loaded usecase.Dashboard) *model.DashboardResponse {
 			InputCostSaved:   loaded.Impact.InputCostSaved,
 			TonnesDiverted:   loaded.Impact.TonnesDiverted,
 		},
+		Calibrations: make([]model.CalibrationResponse, 0, len(loaded.Calibrations)),
+	}
+
+	for _, calibration := range loaded.Calibrations {
+		converted := CalibrationToResponse(
+			&calibration.Calibration, calibration.VarietyName, calibration.CommodityName)
+		if converted != nil {
+			response.Calibrations = append(response.Calibrations, *converted)
+		}
 	}
 
 	for i, week := range loaded.Weeks {

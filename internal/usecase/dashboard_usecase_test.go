@@ -37,18 +37,12 @@ func dashboardFixture(t *testing.T) *gorm.DB {
 	t.Helper()
 
 	db, _ := plotFixture(t)
+	// cooperative and reference_price come from plotFixture's price panel.
 	if err := db.AutoMigrate(
-		&entity.Cooperative{}, &entity.CooperativeCapacity{},
-		&entity.ReferencePrice{}, &entity.InputOrder{}, &entity.InputOrderLine{},
+		&entity.CooperativeCapacity{},
+		&entity.InputOrder{}, &entity.InputOrderLine{},
 	); err != nil {
 		t.Fatalf("migrating dashboard tables: %v", err)
-	}
-
-	if err := db.Create(&entity.Cooperative{
-		ID: homeCoop, Name: "KUD Subang", Village: "Jalancagak",
-		District: "Subang", Province: "Jawa Barat", Lat: -6.25, Lng: 107.75,
-	}).Error; err != nil {
-		t.Fatalf("seeding cooperative: %v", err)
 	}
 
 	return db
