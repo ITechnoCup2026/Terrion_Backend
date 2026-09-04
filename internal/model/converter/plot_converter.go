@@ -87,6 +87,11 @@ func PlotDetailToResponse(detail usecase.PlotDetail) *model.PlotDetailResponse {
 			tonnes = &expected
 		}
 
+		var price *model.PriceBenchmarkResponse
+		if found, known := detail.Prices[block.ID]; known {
+			price = priceBenchmarkToResponse(found)
+		}
+
 		response.Blocks[i] = model.PlotBlockResponse{
 			ID:             block.ID,
 			Label:          block.Label,
@@ -100,10 +105,31 @@ func PlotDetailToResponse(detail usecase.PlotDetail) *model.PlotDetailResponse {
 			PlantingDate:   agronomy.ToISODate(block.PlantingDate),
 			Window:         HarvestWindowToResponse(window, true),
 			ExpectedTonnes: tonnes,
+			Price:          price,
 		}
 	}
 
 	return response
+}
+
+// Dates go out as ISO strings like every other date in the API.
+func priceBenchmarkToResponse(benchmark agronomy.PriceBenchmark) *model.PriceBenchmarkResponse {
+	response := &model.PriceBenchmarkResponse{
+		Latest: weekPriceToResponse(benchmark.Latest),
+		Source: benchmark.Source,
+	}
+	if benchmark.Seasonal != nil {
+		seasonal := weekPriceToResponse(*benchmark.Seasonal)
+		response.Seasonal = &seasonal
+	}
+	return response
+}
+
+func weekPriceToResponse(week agronomy.WeekPrice) model.WeekPriceResponse {
+	return model.WeekPriceResponse{
+		PricePerKg: week.PricePerKg,
+		WeekStart:  agronomy.ToISODate(week.WeekStart),
+	}
 }
 
 func CommodityCatalogueToResponse(

@@ -64,7 +64,9 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 	plotUseCase := usecase.NewPlotUseCase(
 		bootstrapConfig.DB, bootstrapConfig.Log, bootstrapConfig.Validate,
 		plotRepository, blockRepository, memberRepository,
-		commodityRepository, varietyRepository, projectionUseCase, weatherUseCase)
+		commodityRepository, varietyRepository,
+		cooperativeRepository, referencePriceRepository,
+		projectionUseCase, weatherUseCase)
 
 	dashboardUseCase := usecase.NewDashboardUseCase(
 		bootstrapConfig.DB, bootstrapConfig.Log,

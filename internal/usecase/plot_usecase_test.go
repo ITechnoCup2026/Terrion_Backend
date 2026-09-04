@@ -11,12 +11,18 @@ import (
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 
+	"terrion-backend/internal/agronomy"
 	"terrion-backend/internal/constants"
 	"terrion-backend/internal/entity"
 	"terrion-backend/internal/model"
 	"terrion-backend/internal/plots"
 	"terrion-backend/internal/repository"
 	"terrion-backend/internal/weather"
+)
+
+const (
+	pricePanelProvince = "Jawa Barat"
+	pricePanelSource   = "SINTETIS — panel uji"
 )
 
 func plotUseCase(t *testing.T, db *gorm.DB) *PlotUseCase {
@@ -37,7 +43,8 @@ func plotUseCase(t *testing.T, db *gorm.DB) *PlotUseCase {
 	return NewPlotUseCase(db, log, validator.New(),
 		&repository.PlotRepository{}, &repository.BlockRepository{},
 		&repository.MemberRepository{}, &repository.CommodityRepository{},
-		&repository.VarietyRepository{}, projection, weatherUseCase)
+		&repository.VarietyRepository{}, &repository.CooperativeRepository{},
+		&repository.ReferencePriceRepository{}, projection, weatherUseCase)
 }
 
 func plotFixture(t *testing.T) (*gorm.DB, *entity.AppUser) {
@@ -62,9 +69,46 @@ func plotFixture(t *testing.T) (*gorm.DB, *entity.AppUser) {
 		t.Fatalf("seeding commodity: %v", err)
 	}
 
+	seedPricePanel(t, db)
+
 	cooperativeID := homeCoop
 	return db, &entity.AppUser{
 		ID: "user-1", Role: constants.RoleKader, CooperativeID: &cooperativeID,
+	}
+}
+
+// The cooperative the plot belongs to, plus three years of weekly maize prices
+// for its province -- shaped like the real seed so a harvest window projected
+// anywhere in the coming year has a week to look back at.
+func seedPricePanel(t *testing.T, db *gorm.DB) {
+	t.Helper()
+
+	if err := db.AutoMigrate(&entity.Cooperative{}, &entity.ReferencePrice{}); err != nil {
+		t.Fatalf("migrating cooperative and reference price: %v", err)
+	}
+	// The one cooperative row the whole package shares: dashboardFixture and
+	// everything built on it (atlas, public plot) assert on these values.
+	if err := db.Create(&entity.Cooperative{
+		ID: homeCoop, Name: "KUD Subang", Village: "Jalancagak",
+		District: "Subang", Province: pricePanelProvince, Lat: -6.25, Lng: 107.75,
+	}).Error; err != nil {
+		t.Fatalf("seeding cooperative: %v", err)
+	}
+
+	// Mondays, counting back from the Monday of projectionNow's week.
+	monday := projectionNow.AddDate(0, 0, -int(projectionNow.Weekday()-time.Monday))
+	rows := make([]entity.ReferencePrice, 0, 160)
+	for week := 0; week < 160; week++ {
+		rows = append(rows, entity.ReferencePrice{
+			CommodityID: maizeCommodity,
+			Province:    pricePanelProvince,
+			WeekStart:   monday.AddDate(0, 0, -7*week),
+			PricePerKg:  4800 - float64(week),
+			Source:      pricePanelSource,
+		})
+	}
+	if err := db.Create(&rows).Error; err != nil {
+		t.Fatalf("seeding reference prices: %v", err)
 	}
 }
 
@@ -492,5 +536,58 @@ func TestRecordHarvestLeavesTheBlockAloneWhenRefused(t *testing.T) {
 	}
 	if block.ActualHarvestDate != nil || block.ActualYieldKg != nil {
 		t.Error("a refused harvest still wrote to the block")
+	}
+}
+
+func TestPlotGetBenchmarksTheHarvestWeekAgainstTheLatestPrice(t *testing.T) {
+	db, user := plotFixture(t)
+
+	detail, err := plotUseCase(t, db).
+		Get(context.Background(), *user.CooperativeID, "plot-home", projectionNow)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+
+	price, priced := detail.Prices["block-growing"]
+	if !priced {
+		t.Fatal("the growing block has no price benchmark")
+	}
+	// The newest Monday in the panel, which is the one seeded at week 0.
+	if price.Latest.PricePerKg != 4800 {
+		t.Errorf("Latest = %v, want 4800", price.Latest.PricePerKg)
+	}
+	if price.Source != pricePanelSource {
+		t.Errorf("Source = %q, want %q", price.Source, pricePanelSource)
+	}
+
+	window, projected := detail.Windows["block-growing"]
+	if !projected {
+		t.Fatal("the growing block has no window to benchmark against")
+	}
+	if price.Seasonal == nil {
+		t.Fatal("the panel covers a year back but no seasonal price was picked")
+	}
+	if got, want := agronomy.ISOWeekKey(price.Seasonal.WeekStart),
+		agronomy.ISOWeekKey(window.Start.AddDate(0, 0, -364)); got != want {
+		t.Errorf("seasonal week = %s, want %s", got, want)
+	}
+}
+
+func TestPlotGetLeavesBlocksUnpricedOutsideThePanelsProvince(t *testing.T) {
+	db, user := plotFixture(t)
+
+	if err := db.Exec(`UPDATE cooperative SET province = ? WHERE id = ?`,
+		"Papua Pegunungan", homeCoop).Error; err != nil {
+		t.Fatalf("moving the cooperative: %v", err)
+	}
+
+	detail, err := plotUseCase(t, db).
+		Get(context.Background(), *user.CooperativeID, "plot-home", projectionNow)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+
+	if len(detail.Prices) != 0 {
+		t.Errorf("Prices = %v, want none: no panel is published there", detail.Prices)
 	}
 }

@@ -19,6 +19,7 @@ type ReferencePrice struct {
 	CommodityID string
 	WeekStart   time.Time
 	PricePerKg  float64
+	Source      string
 }
 
 type OrderLine struct {

@@ -108,6 +108,25 @@ type PlotSummaryResponse struct {
 	Progress       *float64               `json:"progress"`
 }
 
+type WeekPriceResponse struct {
+	PricePerKg float64 `json:"price_per_kg"`
+	WeekStart  string  `json:"week_start"`
+}
+
+// The market reference for a block that is still growing.
+//
+// Deliberately not one number. Latest is this week's level; Seasonal is the
+// same week of the year the harvest window opens, a year back. A farmer
+// deciding when to sell needs the pair -- the seasonal figure says whether the
+// window lands in a glut, and the latest says what that is worth today.
+type PriceBenchmarkResponse struct {
+	Latest WeekPriceResponse `json:"latest"`
+	// Nil when the panel published no matching week; the screen says so rather
+	// than falling back to Latest and quietly presenting today as the forecast.
+	Seasonal *WeekPriceResponse `json:"seasonal"`
+	Source   string             `json:"source"`
+}
+
 type PlotBlockResponse struct {
 	ID             string                 `json:"id"`
 	Label          string                 `json:"label"`
@@ -121,6 +140,9 @@ type PlotBlockResponse struct {
 	PlantingDate   string                 `json:"planting_date"`
 	Window         *HarvestWindowResponse `json:"window"`
 	ExpectedTonnes *float64               `json:"expected_tonnes"`
+	// Nil when the plot's province has no panel for this commodity. Most of
+	// Indonesia does not yet: only Jawa Barat is seeded.
+	Price *PriceBenchmarkResponse `json:"price"`
 }
 
 type PlotDetailResponse struct {

@@ -47,8 +47,12 @@ type PlotUseCase struct {
 	MemberRepository    *repository.MemberRepository
 	CommodityRepository *repository.CommodityRepository
 	VarietyRepository   *repository.VarietyRepository
-	Projection          *ProjectionUseCase
-	Weather             *WeatherUseCase
+	// For the price panel: prices are published per province, and only the
+	// cooperative knows which province a plot sits in.
+	CooperativeRepository    *repository.CooperativeRepository
+	ReferencePriceRepository *repository.ReferencePriceRepository
+	Projection               *ProjectionUseCase
+	Weather                  *WeatherUseCase
 }
 
 func NewPlotUseCase(
@@ -58,19 +62,23 @@ func NewPlotUseCase(
 	memberRepository *repository.MemberRepository,
 	commodityRepository *repository.CommodityRepository,
 	varietyRepository *repository.VarietyRepository,
+	cooperativeRepository *repository.CooperativeRepository,
+	referencePriceRepository *repository.ReferencePriceRepository,
 	projection *ProjectionUseCase, weatherUseCase *WeatherUseCase,
 ) *PlotUseCase {
 	return &PlotUseCase{
-		DB:                  db,
-		Log:                 log,
-		Validate:            validate,
-		PlotRepository:      plotRepository,
-		BlockRepository:     blockRepository,
-		MemberRepository:    memberRepository,
-		CommodityRepository: commodityRepository,
-		VarietyRepository:   varietyRepository,
-		Projection:          projection,
-		Weather:             weatherUseCase,
+		DB:                       db,
+		Log:                      log,
+		Validate:                 validate,
+		PlotRepository:           plotRepository,
+		BlockRepository:          blockRepository,
+		MemberRepository:         memberRepository,
+		CommodityRepository:      commodityRepository,
+		VarietyRepository:        varietyRepository,
+		CooperativeRepository:    cooperativeRepository,
+		ReferencePriceRepository: referencePriceRepository,
+		Projection:               projection,
+		Weather:                  weatherUseCase,
 	}
 }
 
@@ -80,13 +88,16 @@ type CreatedPlot struct {
 }
 
 type PlotDetail struct {
-	Plot               entity.Plot
-	MemberName         string
-	Blocks             []entity.Block
-	Windows            map[string]agronomy.HarvestWindow
-	Tonnes             map[string]float64
-	Commodities        map[string]entity.Commodity
-	Varieties          map[string]entity.Variety
+	Plot        entity.Plot
+	MemberName  string
+	Blocks      []entity.Block
+	Windows     map[string]agronomy.HarvestWindow
+	Tonnes      map[string]float64
+	Commodities map[string]entity.Commodity
+	Varieties   map[string]entity.Variety
+	// By block ID, and absent for a block whose commodity the province's price
+	// panel does not cover.
+	Prices             map[string]agronomy.PriceBenchmark
 	HasHarvestedBlocks bool
 	Degraded           bool
 }
@@ -172,6 +183,10 @@ func (u *PlotUseCase) Get(
 		if window, known := projection.Windows[block.BlockID]; known {
 			detail.Windows[block.BlockID] = window
 		}
+	}
+
+	if err := u.attachPrices(db, cooperativeID, &detail); err != nil {
+		return PlotDetail{}, err
 	}
 
 	cell := weather.GridCell{GridLat: plot.GridLat, GridLng: plot.GridLng}
@@ -434,6 +449,66 @@ func (u *PlotUseCase) attachReference(db *gorm.DB, detail *PlotDetail) error {
 		detail.Varieties[variety.ID] = variety
 	}
 
+	return nil
+}
+
+// The province's price panel for whatever this plot is growing.
+//
+// Called after the projection rather than alongside the rest of the reference
+// data, because the seasonal price is chosen by the week a harvest window
+// opens -- there is nothing to look up until the windows exist.
+//
+// A plot whose cooperative has no province, or whose commodities nobody
+// publishes a price for, simply comes back with no benchmarks. That is not an
+// error: only Jawa Barat is seeded, so it is the common case today.
+func (u *PlotUseCase) attachPrices(db *gorm.DB, cooperativeID string, detail *PlotDetail) error {
+	detail.Prices = map[string]agronomy.PriceBenchmark{}
+	if len(detail.Blocks) == 0 {
+		return nil
+	}
+
+	cooperative := new(entity.Cooperative)
+	if err := u.CooperativeRepository.FindById(db, cooperative, cooperativeID); err != nil {
+		return fmt.Errorf("reading cooperative %s: %w", cooperativeID, err)
+	}
+
+	commodityIDs := map[string]bool{}
+	for _, block := range detail.Blocks {
+		commodityIDs[block.CommodityID] = true
+	}
+
+	// ponytail: pulls the province's whole weekly history for these commodities
+	// and picks the two rows per block in Go, reusing the query impactOf
+	// already relies on. Roughly 150 small rows per commodity, so a six-block
+	// plot is under a thousand. If the panel ever holds a decade, narrow this
+	// to a query for the latest week plus the seasonal ones.
+	rows, err := u.ReferencePriceRepository.FindForCommodities(
+		db, cooperative.Province, keysOf(commodityIDs))
+	if err != nil {
+		return fmt.Errorf("reading reference prices for %s: %w", cooperative.Province, err)
+	}
+
+	prices := make([]agronomy.ReferencePrice, len(rows))
+	for i, row := range rows {
+		prices[i] = agronomy.ReferencePrice{
+			CommodityID: row.CommodityID,
+			WeekStart:   row.WeekStart,
+			PricePerKg:  row.PricePerKg,
+			Source:      row.Source,
+		}
+	}
+
+	for _, block := range detail.Blocks {
+		// Zero when the block has no window, which BenchmarkFor reads as "no
+		// seasonal week to ask about" and still answers with the latest price.
+		var windowStart time.Time
+		if window, known := detail.Windows[block.ID]; known {
+			windowStart = window.Start
+		}
+		if found := agronomy.BenchmarkFor(prices, block.CommodityID, windowStart); found != nil {
+			detail.Prices[block.ID] = *found
+		}
+	}
 	return nil
 }
 
