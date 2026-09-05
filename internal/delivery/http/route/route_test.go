@@ -30,11 +30,12 @@ func routedApp(t *testing.T) *fiber.App {
 
 	app := fiber.New()
 	config := route.RouteConfig{
-		App:               app,
-		AuthController:    delivery.NewAuthController(authUseCase, log, false),
-		WeatherController: delivery.NewWeatherController(nil, log),
-		AuthUseCase:       authUseCase,
-		CronSecret:        "s3cret",
+		App:                app,
+		AuthController:     delivery.NewAuthController(authUseCase, log, false),
+		WeatherController:  delivery.NewWeatherController(nil, log),
+		PlanningController: delivery.NewPlanningController(nil, log),
+		AuthUseCase:        authUseCase,
+		CronSecret:         "s3cret",
 	}
 	config.Setup()
 	return app
@@ -112,5 +113,31 @@ func TestUnknownApiPathsAreNotFound(t *testing.T) {
 	if got := statusOf(t, app, http.MethodGet, "/api/nothing-here", nil); got != fiber.StatusNotFound {
 		t.Errorf("status = %d, want %d: the auth guard must not swallow unrouted paths",
 			got, fiber.StatusNotFound)
+	}
+}
+
+func TestPlanRoutesExistAndRequireAToken(t *testing.T) {
+	app := routedApp(t)
+
+	cases := []struct {
+		method string
+		path   string
+	}{
+		{http.MethodGet, "/api/plans"},
+		{http.MethodGet, "/api/plans/propose?season=MT%20I%202026%2F2027"},
+		{http.MethodGet, "/api/plans/11111111-1111-4111-8111-111111111111"},
+		{http.MethodPost, "/api/plans"},
+		{http.MethodPost, "/api/plans/11111111-1111-4111-8111-111111111111/cancel"},
+	}
+
+	for _, route := range cases {
+		got := statusOf(t, app, route.method, route.path, nil)
+		if got == fiber.StatusNotFound {
+			t.Errorf("%s %s: status = %d, want the route to exist", route.method, route.path, got)
+		}
+		if got != fiber.StatusUnauthorized {
+			t.Errorf("%s %s: status = %d, want %d",
+				route.method, route.path, got, fiber.StatusUnauthorized)
+		}
 	}
 }

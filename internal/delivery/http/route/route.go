@@ -16,6 +16,7 @@ type RouteConfig struct {
 	AuthController      *http.AuthController
 	CatalogController   *http.CatalogController
 	DashboardController *http.DashboardController
+	PlanningController  *http.PlanningController
 	PlotController      *http.PlotController
 	PublicController    *http.PublicController
 	RdkkController      *http.RdkkController
@@ -71,6 +72,14 @@ func (c *RouteConfig) setupAuthenticatedRoutes() {
 		middleware.RequireRole(constants.RolePengurus), c.CatalogController.RespondToRequest)
 	c.App.Post("/api/stagger", auth,
 		middleware.RequireRole(constants.RolePengurus), c.StaggerController.Apply)
+	c.App.Get("/api/plans/propose", auth,
+		middleware.RequireRole(constants.RolePengurus), c.PlanningController.Propose)
+	c.App.Get("/api/plans", auth, c.PlanningController.List)
+	c.App.Get("/api/plans/:id", auth, c.PlanningController.Get)
+	c.App.Post("/api/plans", auth,
+		middleware.RequireRole(constants.RolePengurus), c.PlanningController.Apply)
+	c.App.Post("/api/plans/:id/cancel", auth,
+		middleware.RequireRole(constants.RolePengurus), c.PlanningController.Cancel)
 }
 
 func (c *RouteConfig) setupCronRoutes() {

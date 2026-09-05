@@ -562,3 +562,77 @@ func TestCancelRefusesOnceAPlanBlockCarriesAHarvest(t *testing.T) {
 		t.Errorf("len(remaining) = %d, want the refusal to change nothing", len(remaining))
 	}
 }
+
+func TestGetReturnsThePlanWithNamesResolved(t *testing.T) {
+	db := seedPlanningFixture(t)
+	useCase, user, applied := applyFirstPlan(t, db)
+
+	stored, err := useCase.Get(context.Background(), user, applied.PlanID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+
+	if stored.Plan.SeasonLabel != planSeason {
+		t.Errorf("SeasonLabel = %q, want %q", stored.Plan.SeasonLabel, planSeason)
+	}
+	if len(stored.Items) != 3 {
+		t.Fatalf("len(Items) = %d, want 3", len(stored.Items))
+	}
+	for _, item := range stored.Items {
+		if stored.MemberNames[item.MemberID] == "" {
+			t.Errorf("member %s has no name", item.MemberID)
+		}
+		if stored.PlotNames[item.PlotID] == "" {
+			t.Errorf("plot %s has no name", item.PlotID)
+		}
+		if stored.VarietyNames[item.VarietyID] == "" {
+			t.Errorf("variety %s has no name", item.VarietyID)
+		}
+		if stored.CommodityNames[item.CommodityID] == "" {
+			t.Errorf("commodity %s has no name", item.CommodityID)
+		}
+	}
+}
+
+func TestGetRefusesAPlanOfAnotherCooperative(t *testing.T) {
+	db := seedPlanningFixture(t)
+	useCase, _, applied := applyFirstPlan(t, db)
+
+	other := otherCoop
+	stranger := &entity.AppUser{
+		ID: "77777777-7777-4777-8777-777777777777", Role: constants.RoleKader,
+		CooperativeID: &other, FullName: "Kader Lain", CreatedAt: planningNow,
+	}
+	if err := db.Create(stranger).Error; err != nil {
+		t.Fatalf("seeding the other member: %v", err)
+	}
+
+	_, err := useCase.Get(context.Background(), stranger, applied.PlanID)
+
+	refusal := new(PlanRefusal)
+	if !errors.As(err, &refusal) || refusal.Code != constants.PlanNotFound {
+		t.Fatalf("err = %v, want %s", err, constants.PlanNotFound)
+	}
+}
+
+func TestListReturnsCancelledPlansToo(t *testing.T) {
+	db := seedPlanningFixture(t)
+	useCase, user, applied := applyFirstPlan(t, db)
+
+	if _, err := useCase.Cancel(
+		context.Background(), user, applied.PlanID, planningNow); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+
+	plans, err := useCase.List(context.Background(), user)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+
+	if len(plans) != 1 {
+		t.Fatalf("len(plans) = %d, want 1", len(plans))
+	}
+	if plans[0].Status != constants.PlanCancelled {
+		t.Errorf("Status = %q, want %q", plans[0].Status, constants.PlanCancelled)
+	}
+}
