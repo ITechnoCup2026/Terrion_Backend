@@ -41,9 +41,24 @@ type Block struct {
 	ActualYieldKg       *float64   `gorm:"column:actual_yield_kg"`
 	ActualPricePerKg    *float64   `gorm:"column:actual_price_per_kg"`
 	PaymentReceivedDate *time.Time `gorm:"column:payment_received_date"`
+	SeasonPlanID        *string    `gorm:"column:season_plan_id"`
 }
 
 func (Block) TableName() string { return "block" }
+
+type SeasonPlan struct {
+	ID            string    `gorm:"column:id;primaryKey"`
+	CooperativeID string    `gorm:"column:cooperative_id"`
+	Label         string    `gorm:"column:label"`
+	SeasonStart   time.Time `gorm:"column:season_start"`
+	SeasonEnd     time.Time `gorm:"column:season_end"`
+	Objective     string    `gorm:"column:objective"`
+	Engine        string    `gorm:"column:engine"`
+	Status        string    `gorm:"column:status"`
+	CreatedAt     time.Time `gorm:"column:created_at"`
+}
+
+func (SeasonPlan) TableName() string { return "season_plan" }
 
 type PublicPlot struct {
 	PublicID    string  `gorm:"column:public_id"`

@@ -278,6 +278,10 @@ func splitOnToday(days []agronomy.TempDay, today string) ([]agronomy.TempDay, []
 }
 
 func earliestPlanting(blocks []entity.Block) time.Time {
+	if len(blocks) == 0 {
+		return time.Time{}
+	}
+
 	earliest := blocks[0].PlantingDate
 	for _, block := range blocks {
 		if block.PlantingDate.Before(earliest) {

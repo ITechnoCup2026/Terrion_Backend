@@ -173,3 +173,22 @@ func numbered(candidates []Candidate) []Candidate {
 	}
 	return candidates
 }
+
+func MergeCandidates(groups ...[]Candidate) []Candidate {
+	merged := []Candidate{}
+	for _, group := range groups {
+		merged = append(merged, group...)
+	}
+
+	sort.Slice(merged, func(i, j int) bool {
+		if merged[i].PlotID != merged[j].PlotID {
+			return merged[i].PlotID < merged[j].PlotID
+		}
+		if merged[i].VarietyID != merged[j].VarietyID {
+			return merged[i].VarietyID < merged[j].VarietyID
+		}
+		return merged[i].PlantingDate.Before(merged[j].PlantingDate)
+	})
+
+	return numbered(merged)
+}

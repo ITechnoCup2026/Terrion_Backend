@@ -20,6 +20,7 @@ type RouteConfig struct {
 	PublicController    *http.PublicController
 	RdkkController      *http.RdkkController
 	StaggerController   *http.StaggerController
+	PlanningController  *http.PlanningController
 	WeatherController   *http.WeatherController
 	AuthUseCase         *usecase.AuthUseCase
 	CronSecret          string
@@ -71,6 +72,15 @@ func (c *RouteConfig) setupAuthenticatedRoutes() {
 		middleware.RequireRole(constants.RolePengurus), c.CatalogController.RespondToRequest)
 	c.App.Post("/api/stagger", auth,
 		middleware.RequireRole(constants.RolePengurus), c.StaggerController.Apply)
+	// Proposing costs nothing and stores nothing, so field staff may explore
+	// it. Applying a plan creates real blocks for the whole cooperative, which
+	// is a management decision -- the plan is a suggestion, the pengurus
+	// decides.
+	c.App.Post("/api/plans/propose", auth, fieldStaff, c.PlanningController.Propose)
+	c.App.Post("/api/plans", auth,
+		middleware.RequireRole(constants.RolePengurus), c.PlanningController.Apply)
+	c.App.Delete("/api/plans/:id", auth,
+		middleware.RequireRole(constants.RolePengurus), c.PlanningController.Cancel)
 }
 
 func (c *RouteConfig) setupCronRoutes() {

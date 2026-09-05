@@ -270,3 +270,9 @@ func TestProjectCooperativeMarksABlockWithNoStoredWeatherImplausible(t *testing.
 		t.Errorf("block-growing plausibility = %q, want a usable window", dated.Plausibility)
 	}
 }
+
+func TestEarliestPlantingOfNothingIsTheZeroTime(t *testing.T) {
+	if got := earliestPlanting(nil); !got.IsZero() {
+		t.Fatalf("koperasi yang belum menanam apa pun harus memberi waktu nol, dapat %v", got)
+	}
+}

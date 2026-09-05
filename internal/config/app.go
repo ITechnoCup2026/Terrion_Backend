@@ -1,12 +1,15 @@
 package config
 
 import (
+	"time"
+
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
 	"github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 
+	"terrion-backend/internal/aiclient"
 	"terrion-backend/internal/delivery/http"
 	"terrion-backend/internal/delivery/http/route"
 	"terrion-backend/internal/entity"
@@ -40,6 +43,7 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 	fertiliserRateRepository := &repository.FertiliserRateRepository{}
 	supplyRequestRepository := &repository.SupplyRequestRepository{}
 	publicPlotRepository := &repository.PublicPlotRepository{}
+	seasonPlanRepository := &repository.SeasonPlanRepository{}
 
 	goTrue := supabase.NewClient(
 		bootstrapConfig.Config.Supabase.URL,
@@ -106,6 +110,23 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 	publicController := http.NewPublicController(
 		publicUseCase, atlasUseCase, bootstrapConfig.Log)
 	staggerController := http.NewStaggerController(staggerUseCase, bootstrapConfig.Log)
+
+	// Empty AI_SERVICE_URL means aiclient.New returns nil, and the planner
+	// uses the Go solver. The AI service is an upgrade, never a dependency.
+	aiClient := aiclient.New(
+		bootstrapConfig.Config.AI.ServiceURL,
+		bootstrapConfig.Config.AI.ServiceToken,
+		time.Duration(bootstrapConfig.Config.AI.TimeoutMs)*time.Millisecond,
+		bootstrapConfig.Log,
+	)
+
+	planningUseCase := usecase.NewPlanningUseCase(
+		bootstrapConfig.DB, bootstrapConfig.Log, bootstrapConfig.Validate,
+		plotRepository, blockRepository, varietyRepository, referencePriceRepository,
+		cooperativeRepository, supplyRequestRepository, seasonPlanRepository,
+		projectionUseCase, aiClient)
+
+	planningController := http.NewPlanningController(planningUseCase, bootstrapConfig.Log)
 	catalogController := http.NewCatalogController(
 		catalogUseCase, supplyRequestUseCase, bootstrapConfig.Log)
 	rdkkController := http.NewRdkkController(rdkkUseCase, bootstrapConfig.Log)
@@ -123,6 +144,7 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 		PublicController:    publicController,
 		RdkkController:      rdkkController,
 		StaggerController:   staggerController,
+		PlanningController:  planningController,
 		WeatherController:   weatherController,
 		AuthUseCase:         authUseCase,
 		CronSecret:          bootstrapConfig.Config.Cron.Secret,

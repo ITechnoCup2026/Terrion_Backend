@@ -1,6 +1,7 @@
 package planning_test
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -155,5 +156,36 @@ func TestBuildCandidatesLeavesPriceNilForAnUnpricedCommodity(t *testing.T) {
 
 	if candidate := planning.BuildCandidates(input)[0]; candidate.PricePerKg != nil {
 		t.Fatal("komoditas tanpa harga acuan harus kosong, bukan nol rupiah")
+	}
+}
+
+func TestMergeCandidatesRenumbersWithoutGaps(t *testing.T) {
+	first := planning.BuildCandidates(sampleInput(t))
+
+	second := sampleInput(t)
+	second.Plots = []planning.Plot{{ID: "plot-z", AreaHa: 0.5}}
+	merged := planning.MergeCandidates(first, planning.BuildCandidates(second))
+
+	if len(merged) != len(first)+len(planning.BuildCandidates(second)) {
+		t.Fatalf("penggabungan kehilangan kandidat: %d", len(merged))
+	}
+	for i, candidate := range merged {
+		want := fmt.Sprintf("c%03d", i+1)
+		if candidate.ID != want {
+			t.Fatalf("penomoran berlubang pada posisi %d: %s bukan %s", i, candidate.ID, want)
+		}
+	}
+}
+
+func TestMergeCandidatesIsDeterministic(t *testing.T) {
+	build := func() []planning.Candidate {
+		second := sampleInput(t)
+		second.Plots = []planning.Plot{{ID: "plot-z", AreaHa: 0.5}}
+		return planning.MergeCandidates(
+			planning.BuildCandidates(sampleInput(t)), planning.BuildCandidates(second))
+	}
+
+	if !reflect.DeepEqual(build(), build()) {
+		t.Fatal("penggabungan tidak deterministik")
 	}
 }
