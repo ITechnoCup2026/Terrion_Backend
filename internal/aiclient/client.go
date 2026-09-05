@@ -28,6 +28,9 @@ func NewClient(baseURL, token string, timeout time.Duration) *Client {
 	}
 
 	return &Client{
+		// Timeout di klien adalah jaring pengaman per permintaan; yang
+		// menegakkan anggaran sebenarnya adalah deadline milik Propose,
+		// yang selalu sama ketat atau lebih ketat dari ini.
 		HTTP:    &http.Client{Timeout: timeout},
 		BaseURL: strings.TrimRight(trimmed, "/"),
 		Token:   token,
@@ -47,12 +50,28 @@ func (e *ServiceError) Error() string {
 	return fmt.Sprintf("aiclient: %d %s: %s", e.Status, e.Code, e.Message)
 }
 
+// Propose memanggil layanan AI, dengan satu kali percobaan ulang.
+//
+// Deadline-nya dibuat SEKALI di sini dan dibagi oleh kedua percobaan beserta
+// jeda di antaranya, karena c.Timeout adalah anggaran untuk seluruh panggilan
+// (ARCHITECTURE.md §6.1: "termasuk 1 retry"), bukan jatah per percobaan.
+//
+// Dulu setiap percobaan membuat deadline-nya sendiri dan tidak ada deadline di
+// atas keduanya — controller mengoper ctx.UserContext() yang polos. Terukur:
+// layanan AI yang menggantung menahan pengguna 7,35 detik, dua kali lipat dari
+// 3,5 detik yang dijanjikan, dan percobaan keduanya mengulang seluruh
+// komputasi Python (CP-SAT + Monte Carlo + tiga panggilan LLM) justru ketika
+// layanan itu sedang lambat. Dengan satu deadline bersama, percobaan kedua
+// hanya berangkat kalau memang masih ada waktu untuknya.
 func (c *Client) Propose(ctx context.Context, request Request) (*Response, error) {
 	if !c.breaker.allow() {
 		return nil, ErrBreakerOpen
 	}
 
-	response, err := c.post(ctx, request)
+	call, cancel := context.WithTimeout(ctx, c.Timeout)
+	defer cancel()
+
+	response, err := c.post(call, request)
 	if err == nil {
 		c.breaker.succeed()
 		return response, nil
@@ -66,12 +85,15 @@ func (c *Client) Propose(ctx context.Context, request Request) (*Response, error
 
 	select {
 	case <-time.After(backoff()):
-	case <-ctx.Done():
+	case <-call.Done():
+		// Anggaran habis sebelum jeda selesai. Yang dikembalikan adalah galat
+		// percobaan pertama, bukan call.Err(): ia menyebutkan apa yang
+		// sebenarnya terjadi, dan tetap bertipe *ServiceError bagi pemanggil.
 		c.breaker.fail()
-		return nil, ctx.Err()
+		return nil, err
 	}
 
-	response, err = c.post(ctx, request)
+	response, err = c.post(call, request)
 	if err != nil {
 		c.breaker.fail()
 		return nil, err
@@ -109,11 +131,10 @@ func (c *Client) post(ctx context.Context, request Request) (*Response, error) {
 		return nil, &ServiceError{Code: "encode_failed", Message: err.Error()}
 	}
 
-	call, cancel := context.WithTimeout(ctx, c.Timeout)
-	defer cancel()
-
+	// Tanpa WithTimeout sendiri: deadline-nya milik Propose, dan dibagi
+	// dengan percobaan yang lain.
 	httpRequest, err := http.NewRequestWithContext(
-		call, http.MethodPost, c.BaseURL+constants.AIProposePath, bytes.NewReader(body))
+		ctx, http.MethodPost, c.BaseURL+constants.AIProposePath, bytes.NewReader(body))
 	if err != nil {
 		return nil, &ServiceError{Code: "build_failed", Message: err.Error()}
 	}
