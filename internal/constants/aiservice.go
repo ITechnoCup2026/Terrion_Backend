@@ -32,3 +32,8 @@ const (
 	AIMaxCandidates = 2000
 	AIMaxDemandRows = 400
 )
+
+const (
+	AIPlausible         = "plausible"
+	AISeedSecondsPerDay = 86400
+)

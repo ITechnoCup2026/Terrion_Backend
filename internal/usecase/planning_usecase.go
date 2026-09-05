@@ -2,17 +2,21 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 
 	"terrion-backend/internal/agronomy"
+	"terrion-backend/internal/aiclient"
 	"terrion-backend/internal/constants"
 	"terrion-backend/internal/entity"
 	"terrion-backend/internal/model"
@@ -44,6 +48,7 @@ type Proposal struct {
 	Plans             []planning.Plan
 	Skipped           []SkippedPlot
 	YieldObservations int
+	Engine            constants.PlanEngine
 }
 
 type PlanningUseCase struct {
@@ -62,6 +67,8 @@ type PlanningUseCase struct {
 	Projection               *ProjectionUseCase
 	Weather                  *WeatherUseCase
 	Catalog                  *CatalogUseCase
+	AI                       *aiclient.Client
+	Redis                    *redis.Client
 }
 
 func NewPlanningUseCase(
@@ -76,7 +83,7 @@ func NewPlanningUseCase(
 	supplyRequestRepository *repository.SupplyRequestRepository,
 	seasonPlanRepository *repository.SeasonPlanRepository,
 	projection *ProjectionUseCase, weatherUseCase *WeatherUseCase,
-	catalog *CatalogUseCase,
+	catalog *CatalogUseCase, ai *aiclient.Client, cache *redis.Client,
 ) *PlanningUseCase {
 	return &PlanningUseCase{
 		DB:                       db,
@@ -94,6 +101,8 @@ func NewPlanningUseCase(
 		Projection:               projection,
 		Weather:                  weatherUseCase,
 		Catalog:                  catalog,
+		AI:                       ai,
+		Redis:                    cache,
 	}
 }
 
@@ -160,17 +169,21 @@ func (u *PlanningUseCase) Propose(
 		return Proposal{}, err
 	}
 
+	input := planning.Input{
+		Season:     season,
+		Plots:      candidates,
+		PricePerKg: prices,
+		Demand:     demand,
+		Capacity:   capacity,
+	}
+	plans, engine := u.solve(ctx, input, season, now)
+
 	return Proposal{
-		Season: season,
-		Plans: planning.Search(planning.Input{
-			Season:     season,
-			Plots:      candidates,
-			PricePerKg: prices,
-			Demand:     demand,
-			Capacity:   capacity,
-		}),
+		Season:            season,
+		Plans:             plans,
 		Skipped:           skipped,
 		YieldObservations: projection.Yield.NObservations,
+		Engine:            engine,
 	}, nil
 }
 
@@ -843,4 +856,208 @@ func (u *PlanningUseCase) catalogueNames(
 		varietyNames[variety.ID] = variety.Name
 	}
 	return commodityNames, varietyNames, nil
+}
+
+func (u *PlanningUseCase) solve(
+	ctx context.Context, input planning.Input, season planning.Season, now time.Time,
+) ([]planning.Plan, constants.PlanEngine) {
+	if u.AI == nil {
+		return planning.Search(input), constants.PlanEngineFallback
+	}
+
+	plans, err := u.askAIService(ctx, input, season, now)
+	if err == nil {
+		return plans, constants.PlanEngineAIService
+	}
+
+	if !errors.Is(err, aiclient.ErrBreakerOpen) {
+		u.Log.WithError(err).Warn("layanan AI tidak terpakai, memakai solver lokal")
+	}
+	return planning.Search(input), constants.PlanEngineFallback
+}
+
+func (u *PlanningUseCase) askAIService(
+	ctx context.Context, input planning.Input, season planning.Season, now time.Time,
+) ([]planning.Plan, error) {
+	request, options := buildAIRequest(input, season, now)
+	if len(options) == 0 {
+		return nil, fmt.Errorf("tidak ada kandidat untuk dikirim ke layanan AI")
+	}
+
+	fingerprint := aiclient.Fingerprint(request)
+	if response, found := u.cachedPlan(ctx, fingerprint); found {
+		return translateAIPlans(response, input, options)
+	}
+
+	response, err := u.AI.Propose(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+
+	u.cachePlan(ctx, fingerprint, response)
+	return translateAIPlans(response, input, options)
+}
+
+func buildAIRequest(
+	input planning.Input, season planning.Season, now time.Time,
+) (aiclient.Request, map[string]planning.Assignment) {
+	table := aiclient.NewRefTable()
+	options := map[string]planning.Assignment{}
+	candidates := []aiclient.Candidate{}
+
+	for _, plot := range input.Plots {
+		for _, option := range plot.Options {
+			id := fmt.Sprintf("c%03d", len(candidates)+1)
+			options[id] = option
+
+			candidates = append(candidates, aiclient.Candidate{
+				ID:           id,
+				PlotRef:      table.Plot(option.PlotID),
+				AreaHa:       option.AreaHa,
+				CommodityRef: table.Commodity(option.CommodityID),
+				VarietyRef:   table.Variety(option.VarietyID),
+				PlantingDate: agronomy.ToISODate(option.PlantingDate),
+				HarvestStart: agronomy.ToISODate(option.Window.Start),
+				HarvestEnd:   agronomy.ToISODate(option.Window.End),
+				TonnesLow:    option.TonnesLow,
+				TonnesMid:    option.TonnesMid,
+				TonnesHigh:   option.TonnesHigh,
+				Plausibility: contractPlausibility(option.Plausibility),
+				PricePerKg:   priceOf(input.PricePerKg, option.CommodityID),
+			})
+		}
+	}
+
+	demand := make([]aiclient.DemandRow, 0, len(input.Demand))
+	for _, row := range input.Demand {
+		demand = append(demand, aiclient.DemandRow{
+			CommodityRef: table.Commodity(row.CommodityID),
+			ISOWeek:      agronomy.ToISODate(row.WeekStart),
+			Kg:           int64(math.Round(row.Kg)),
+		})
+	}
+
+	return aiclient.Request{
+		ContractVersion: constants.AIContractVersion,
+		RequestID:       uuid.NewString(),
+		Seed:            agronomy.StartOfDay(now).Unix() / constants.AISeedSecondsPerDay,
+		Season: aiclient.Season{
+			Label: season.Label,
+			Start: agronomy.ToISODate(season.Start),
+			End:   agronomy.ToISODate(season.End),
+		},
+		Objectives: []string{
+			string(constants.ObjectiveSafe),
+			string(constants.ObjectiveIncome),
+			string(constants.ObjectiveMarket),
+		},
+		CapacityTonnesPerWeek: soleCapacity(input.Capacity),
+		Candidates:            candidates,
+		Demand:                demand,
+	}, options
+}
+
+func translateAIPlans(
+	response *aiclient.Response, input planning.Input,
+	options map[string]planning.Assignment,
+) ([]planning.Plan, error) {
+	if len(response.Plans) == 0 {
+		return nil, fmt.Errorf("layanan AI mengembalikan nol rencana")
+	}
+
+	plans := make([]planning.Plan, 0, len(response.Plans))
+
+	for _, result := range response.Plans {
+		assignments := make([]planning.Assignment, 0, len(result.CandidateIDs))
+		claimed := map[string]bool{}
+
+		for _, id := range result.CandidateIDs {
+			option, known := options[id]
+			if !known || claimed[option.PlotID] {
+				continue
+			}
+			claimed[option.PlotID] = true
+			assignments = append(assignments, option)
+		}
+
+		if len(assignments) == 0 {
+			return nil, fmt.Errorf("rencana %q tidak memuat satu pun kandidat yang dikenal",
+				result.Objective)
+		}
+
+		plans = append(plans, planning.Plan{
+			Objective:   constants.PlanningObjective(result.Objective),
+			Assignments: assignments,
+			Metrics:     planning.Measure(assignments, input.PricePerKg, input.Demand),
+			Flagged: agronomy.DetectCollisions(
+				planning.Projections(assignments), input.Capacity).Flagged,
+			Evaluations: response.Diagnostics.Evaluations,
+			Narrative:   result.Narrative,
+		})
+	}
+
+	return plans, nil
+}
+
+func contractPlausibility(plausibility constants.Plausibility) string {
+	if plausibility == constants.PlausibilityOk {
+		return constants.AIPlausible
+	}
+	return string(plausibility)
+}
+
+func priceOf(prices map[string]float64, commodityID string) *float64 {
+	price, published := prices[commodityID]
+	if !published {
+		return nil
+	}
+	return &price
+}
+
+func soleCapacity(capacity map[string]float64) *float64 {
+	if len(capacity) != 1 {
+		return nil
+	}
+	for _, tonnes := range capacity {
+		return &tonnes
+	}
+	return nil
+}
+
+func (u *PlanningUseCase) cachedPlan(
+	ctx context.Context, fingerprint string,
+) (*aiclient.Response, bool) {
+	if u.Redis == nil || fingerprint == "" {
+		return nil, false
+	}
+
+	raw, err := u.Redis.Get(ctx, constants.AIPlanCacheKey+fingerprint).Bytes()
+	if err != nil {
+		return nil, false
+	}
+
+	var response aiclient.Response
+	if err := json.Unmarshal(raw, &response); err != nil {
+		return nil, false
+	}
+	return &response, true
+}
+
+func (u *PlanningUseCase) cachePlan(
+	ctx context.Context, fingerprint string, response *aiclient.Response,
+) {
+	if u.Redis == nil || fingerprint == "" {
+		return
+	}
+
+	raw, err := json.Marshal(response)
+	if err != nil {
+		return
+	}
+
+	if err := u.Redis.Set(
+		ctx, constants.AIPlanCacheKey+fingerprint, raw, constants.AIPlanCacheTTL,
+	).Err(); err != nil {
+		u.Log.WithError(err).Warn("gagal menyimpan cache rencana")
+	}
 }

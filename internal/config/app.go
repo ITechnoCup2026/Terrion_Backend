@@ -1,12 +1,15 @@
 package config
 
 import (
+	"time"
+
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
 	"github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 
+	"terrion-backend/internal/aiclient"
 	"terrion-backend/internal/delivery/http"
 	"terrion-backend/internal/delivery/http/route"
 	"terrion-backend/internal/entity"
@@ -92,12 +95,22 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 		bootstrapConfig.DB, bootstrapConfig.Log, bootstrapConfig.Validate,
 		cooperativeRepository, blockRepository, projectionUseCase)
 
+	aiPlanner := aiclient.NewClient(
+		bootstrapConfig.Config.AI.ServiceURL,
+		bootstrapConfig.Config.AI.Token,
+		time.Duration(bootstrapConfig.Config.AI.Timeout)*time.Millisecond)
+
+	if aiPlanner == nil {
+		bootstrapConfig.Log.Info(
+			"AI_SERVICE_URL kosong: perencanaan memakai solver bawaan")
+	}
+
 	planningUseCase := usecase.NewPlanningUseCase(
 		bootstrapConfig.DB, bootstrapConfig.Log, bootstrapConfig.Validate,
 		plotRepository, blockRepository, memberRepository, commodityRepository,
 		varietyRepository, cooperativeRepository, referencePriceRepository,
 		supplyRequestRepository, seasonPlanRepository,
-		projectionUseCase, weatherUseCase, catalogUseCase)
+		projectionUseCase, weatherUseCase, catalogUseCase, aiPlanner, bootstrapConfig.Redis)
 
 	publicUseCase := usecase.NewPublicUseCase(
 		bootstrapConfig.DB, bootstrapConfig.Log,

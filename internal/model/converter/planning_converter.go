@@ -15,6 +15,7 @@ func ProposalToResponse(proposal usecase.Proposal) *model.ProposalResponse {
 	response := &model.ProposalResponse{
 		Season:            seasonToResponse(proposal.Season),
 		Basis:             string(constants.BasisClimatology),
+		Engine:            string(proposal.Engine),
 		YieldObservations: proposal.YieldObservations,
 		Plans:             make([]model.CandidatePlanResponse, len(proposal.Plans)),
 		Skipped:           make([]model.SkippedPlotResponse, len(proposal.Skipped)),
@@ -49,6 +50,7 @@ func seasonToResponse(season planning.Season) model.SeasonResponse {
 func candidatePlanToResponse(plan planning.Plan) model.CandidatePlanResponse {
 	converted := model.CandidatePlanResponse{
 		Objective: string(plan.Objective),
+		Narrative: plan.Narrative,
 		Metrics: model.PlanMetricsResponse{
 			PeakTonnesExpected: plan.Metrics.PeakTonnesExpected,
 			PeakTonnesWorst:    plan.Metrics.PeakTonnesWorst,

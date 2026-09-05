@@ -1,12 +1,18 @@
 .superpowers/
 .claude/
-docs/
+docs/*
+!docs/adr/
+!docs/adr/**
+!docs/ARCHITECTURE.md
 
 # Environment
 .env
 
 # Markdown files
 *.md
+README.md
+docs/adr/*.md
+docs/ARCHITECTURE.md
 
 # Build artifacts
 /bin/

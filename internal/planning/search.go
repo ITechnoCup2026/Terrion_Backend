@@ -30,6 +30,7 @@ type Plan struct {
 	Metrics     Metrics
 	Flagged     []agronomy.FlaggedWeek
 	Evaluations int
+	Narrative   string
 }
 
 type objectiveSpec struct {
