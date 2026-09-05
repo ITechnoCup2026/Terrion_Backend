@@ -78,6 +78,7 @@ func TestPublicPlotViewColumns(t *testing.T) {
 var (
 	commentPattern    = regexp.MustCompile(`--[^\n]*`)
 	createTablePatten = regexp.MustCompile(`(?i)create\s+table\s+(\w+)\s*\(`)
+	addColumnPattern  = regexp.MustCompile(`(?i)alter\s+table\s+(\w+)\s+add\s+column\s+(\w+)`)
 )
 
 func columnsFromMigrations(t *testing.T) map[string][]string {
@@ -99,6 +100,10 @@ func columnsFromMigrations(t *testing.T) map[string][]string {
 		for _, match := range createTablePatten.FindAllStringSubmatchIndex(sql, -1) {
 			name := sql[match[2]:match[3]]
 			tables[name] = columnNames(sql[match[1]:])
+		}
+
+		for _, match := range addColumnPattern.FindAllStringSubmatch(sql, -1) {
+			tables[match[1]] = append(tables[match[1]], match[2])
 		}
 	}
 	return tables

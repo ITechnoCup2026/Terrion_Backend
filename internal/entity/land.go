@@ -41,6 +41,7 @@ type Block struct {
 	ActualYieldKg       *float64   `gorm:"column:actual_yield_kg"`
 	ActualPricePerKg    *float64   `gorm:"column:actual_price_per_kg"`
 	PaymentReceivedDate *time.Time `gorm:"column:payment_received_date"`
+	SeasonPlanID        *string    `gorm:"column:season_plan_id"`
 }
 
 func (Block) TableName() string { return "block" }
