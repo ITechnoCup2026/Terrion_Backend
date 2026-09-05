@@ -238,3 +238,22 @@ func (u *CatalogUseCase) writeCache(ctx context.Context, key string, built Catal
 		u.Log.Warnf("not caching the catalogue at %s: %v", key, err)
 	}
 }
+
+func (u *CatalogUseCase) Invalidate(ctx context.Context, now time.Time) {
+	if u.Redis == nil {
+		return
+	}
+
+	pattern := constants.CatalogCacheKey + agronomy.ToISODate(now) + "*"
+	keys, err := u.Redis.Keys(ctx, pattern).Result()
+	if err != nil {
+		u.Log.Errorf("scanning catalogue cache keys: %v", err)
+		return
+	}
+	if len(keys) == 0 {
+		return
+	}
+	if err := u.Redis.Del(ctx, keys...).Err(); err != nil {
+		u.Log.Errorf("clearing catalogue cache: %v", err)
+	}
+}

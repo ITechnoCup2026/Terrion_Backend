@@ -2,18 +2,22 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
 
 	"github.com/go-playground/validator/v10"
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 
 	"terrion-backend/internal/agronomy"
 	"terrion-backend/internal/constants"
 	"terrion-backend/internal/entity"
+	"terrion-backend/internal/model"
 	"terrion-backend/internal/planning"
+	"terrion-backend/internal/plots"
 	"terrion-backend/internal/repository"
 	"terrion-backend/internal/weather"
 )
@@ -54,8 +58,10 @@ type PlanningUseCase struct {
 	CooperativeRepository    *repository.CooperativeRepository
 	ReferencePriceRepository *repository.ReferencePriceRepository
 	SupplyRequestRepository  *repository.SupplyRequestRepository
+	SeasonPlanRepository     *repository.SeasonPlanRepository
 	Projection               *ProjectionUseCase
 	Weather                  *WeatherUseCase
+	Catalog                  *CatalogUseCase
 }
 
 func NewPlanningUseCase(
@@ -68,7 +74,9 @@ func NewPlanningUseCase(
 	cooperativeRepository *repository.CooperativeRepository,
 	referencePriceRepository *repository.ReferencePriceRepository,
 	supplyRequestRepository *repository.SupplyRequestRepository,
+	seasonPlanRepository *repository.SeasonPlanRepository,
 	projection *ProjectionUseCase, weatherUseCase *WeatherUseCase,
+	catalog *CatalogUseCase,
 ) *PlanningUseCase {
 	return &PlanningUseCase{
 		DB:                       db,
@@ -82,8 +90,10 @@ func NewPlanningUseCase(
 		CooperativeRepository:    cooperativeRepository,
 		ReferencePriceRepository: referencePriceRepository,
 		SupplyRequestRepository:  supplyRequestRepository,
+		SeasonPlanRepository:     seasonPlanRepository,
 		Projection:               projection,
 		Weather:                  weatherUseCase,
+		Catalog:                  catalog,
 	}
 }
 
@@ -448,4 +458,184 @@ func (u *PlanningUseCase) capacityOf(
 		capacity[row.CommodityID] = row.TonnesPerWeek
 	}
 	return capacity, nil
+}
+
+type AppliedPlan struct {
+	PlanID string
+	Blocks int
+}
+
+func (u *PlanningUseCase) Apply(
+	ctx context.Context, user *entity.AppUser,
+	request *model.ApplySeasonPlanRequest, now time.Time,
+) (AppliedPlan, error) {
+	if user.CooperativeID == nil {
+		return AppliedPlan{}, ErrNoCooperative
+	}
+	if err := u.Validate.Struct(request); err != nil {
+		return AppliedPlan{}, err
+	}
+	cooperativeID := *user.CooperativeID
+
+	season, open := planning.SeasonByLabel(request.SeasonLabel, now)
+	if !open {
+		return AppliedPlan{}, &PlanRefusal{Code: constants.PlanSeasonClosed}
+	}
+
+	db := u.DB.WithContext(ctx)
+	if _, err := u.SeasonPlanRepository.FindActiveByLabel(
+		db, cooperativeID, season.Label); err == nil {
+		return AppliedPlan{}, &PlanRefusal{Code: constants.PlanAlreadyApplied}
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return AppliedPlan{}, fmt.Errorf("reading active plan of %s: %w", cooperativeID, err)
+	}
+
+	offered, err := u.offeredOptions(ctx, cooperativeID, season, now)
+	if err != nil {
+		return AppliedPlan{}, err
+	}
+
+	assignments := make([]planning.Assignment, len(request.Assignments))
+	for i, wanted := range request.Assignments {
+		matched, found := offered[optionKey(
+			wanted.PlotID, wanted.VarietyID, wanted.PlantingDate)]
+		if !found {
+			return AppliedPlan{}, &PlanRefusal{Code: constants.PlanAssignmentRejected}
+		}
+		assignments[i] = matched
+	}
+
+	plan := &entity.SeasonPlan{
+		ID:            uuid.NewString(),
+		CooperativeID: cooperativeID,
+		SeasonLabel:   season.Label,
+		SeasonStart:   season.Start,
+		SeasonEnd:     season.End,
+		Objective:     constants.PlanningObjective(request.Objective),
+		Status:        constants.PlanApplied,
+		CreatedBy:     user.ID,
+		CreatedAt:     now,
+	}
+
+	if err := u.persistPlan(ctx, plan, assignments); err != nil {
+		return AppliedPlan{}, err
+	}
+
+	if u.Catalog != nil {
+		u.Catalog.Invalidate(ctx, now)
+	}
+
+	return AppliedPlan{PlanID: plan.ID, Blocks: len(assignments)}, nil
+}
+
+func optionKey(plotID, varietyID, plantingDate string) string {
+	return plotID + "|" + varietyID + "|" + plantingDate
+}
+
+func (u *PlanningUseCase) offeredOptions(
+	ctx context.Context, cooperativeID string, season planning.Season, now time.Time,
+) (map[string]planning.Assignment, error) {
+	dates := planning.CandidatePlantingDates(season, now)
+	if len(dates) == 0 {
+		return nil, &PlanRefusal{Code: constants.PlanSeasonClosed}
+	}
+
+	projection, err := u.Projection.ProjectCooperative(ctx, cooperativeID, now)
+	if err != nil {
+		return nil, err
+	}
+	if len(projection.Plots) == 0 {
+		return nil, &PlanRefusal{Code: constants.PlanNoPlots}
+	}
+
+	normals, err := u.normalsFor(ctx, projection.Plots, now)
+	if err != nil {
+		return nil, err
+	}
+
+	varieties, commodityOfVariety, err := u.plannableVarieties(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	names, err := u.memberNames(ctx, cooperativeID)
+	if err != nil {
+		return nil, err
+	}
+
+	candidates, _, err := u.buildCandidates(
+		projection, normals, varieties, commodityOfVariety, names, dates)
+	if err != nil {
+		return nil, err
+	}
+
+	offered := map[string]planning.Assignment{}
+	for _, candidate := range candidates {
+		for _, option := range candidate.Options {
+			offered[optionKey(option.PlotID, option.VarietyID,
+				agronomy.ToISODate(option.PlantingDate))] = option
+		}
+	}
+	return offered, nil
+}
+
+func (u *PlanningUseCase) persistPlan(
+	ctx context.Context, plan *entity.SeasonPlan, assignments []planning.Assignment,
+) error {
+	tx := u.DB.WithContext(ctx).Begin()
+	defer tx.Rollback()
+
+	if err := u.SeasonPlanRepository.Create(tx, plan); err != nil {
+		return fmt.Errorf("creating season plan for %s: %w", plan.CooperativeID, err)
+	}
+
+	for _, assignment := range assignments {
+		nextIndex, err := u.BlockRepository.NextOrderIndex(tx, assignment.PlotID)
+		if err != nil {
+			return fmt.Errorf("reading block order of plot %s: %w", assignment.PlotID, err)
+		}
+
+		planID := plan.ID
+		block := &entity.Block{
+			ID:           uuid.NewString(),
+			PlotID:       assignment.PlotID,
+			Label:        plots.BlockLabel(nextIndex),
+			AreaHa:       assignment.AreaHa,
+			OrderIndex:   nextIndex,
+			CommodityID:  assignment.CommodityID,
+			VarietyID:    assignment.VarietyID,
+			PlantingDate: assignment.PlantingDate,
+			SeasonPlanID: &planID,
+		}
+		if err := u.BlockRepository.Create(tx, block); err != nil {
+			return fmt.Errorf("creating plan block on plot %s: %w", assignment.PlotID, err)
+		}
+
+		blockID := block.ID
+		item := &entity.SeasonPlanItem{
+			ID:                   uuid.NewString(),
+			PlanID:               plan.ID,
+			PlotID:               assignment.PlotID,
+			MemberID:             assignment.MemberID,
+			CommodityID:          assignment.CommodityID,
+			VarietyID:            assignment.VarietyID,
+			PlantingDate:         assignment.PlantingDate,
+			AreaHa:               assignment.AreaHa,
+			ExpectedTonnesLow:    assignment.TonnesLow,
+			ExpectedTonnesMid:    assignment.TonnesMid,
+			ExpectedTonnesHigh:   assignment.TonnesHigh,
+			ExpectedHarvestStart: assignment.Window.Start,
+			ExpectedHarvestEnd:   assignment.Window.End,
+			Plausibility:         string(assignment.Plausibility),
+			BlockID:              &blockID,
+		}
+		if err := tx.Create(item).Error; err != nil {
+			return fmt.Errorf("creating plan item for plot %s: %w", assignment.PlotID, err)
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		return fmt.Errorf("committing season plan %s: %w", plan.ID, err)
+	}
+	return nil
 }
