@@ -21,6 +21,7 @@ type HistoricalRequest struct {
 type Demand struct {
 	CommodityID string
 	ISOWeek     string
+	WeekStart   time.Time
 	Kg          float64
 }
 
@@ -42,6 +43,7 @@ func DemandByWeek(requests []HistoricalRequest, season Season) []Demand {
 			totals[key] = &Demand{
 				CommodityID: request.CommodityID,
 				ISOWeek:     isoWeek,
+				WeekStart:   agronomy.ISOWeekStart(shifted),
 				Kg:          request.VolumeKg,
 			}
 			keys = append(keys, key)

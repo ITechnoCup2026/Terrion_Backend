@@ -49,6 +49,7 @@ type PlanMetricsResponse struct {
 
 type CandidatePlanResponse struct {
 	Objective   string                   `json:"objective"`
+	Narrative   string                   `json:"narrative"`
 	Metrics     PlanMetricsResponse      `json:"metrics"`
 	Assignments []PlanAssignmentResponse `json:"assignments"`
 }
@@ -63,6 +64,7 @@ type SkippedPlotResponse struct {
 type ProposalResponse struct {
 	Season            SeasonResponse          `json:"season"`
 	Basis             string                  `json:"basis"`
+	Engine            string                  `json:"engine"`
 	YieldObservations int                     `json:"yield_observations"`
 	Plans             []CandidatePlanResponse `json:"plans"`
 	Skipped           []SkippedPlotResponse   `json:"skipped"`

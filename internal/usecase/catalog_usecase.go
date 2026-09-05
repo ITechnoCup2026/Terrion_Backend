@@ -248,16 +248,22 @@ func (u *CatalogUseCase) Invalidate(ctx context.Context, now time.Time) {
 		return
 	}
 
-	pattern := constants.CatalogCacheKey + agronomy.ToISODate(now) + "*"
-	keys, err := u.Redis.Keys(ctx, pattern).Result()
-	if err != nil {
-		u.Log.Errorf("scanning catalogue cache keys: %v", err)
-		return
+	patterns := []string{
+		constants.CatalogCacheKey + agronomy.ToISODate(now) + "*",
+		constants.AIPlanCacheKey + "*",
 	}
-	if len(keys) == 0 {
-		return
-	}
-	if err := u.Redis.Del(ctx, keys...).Err(); err != nil {
-		u.Log.Errorf("clearing catalogue cache: %v", err)
+
+	for _, pattern := range patterns {
+		keys, err := u.Redis.Keys(ctx, pattern).Result()
+		if err != nil {
+			u.Log.Errorf("scanning cache keys %s: %v", pattern, err)
+			continue
+		}
+		if len(keys) == 0 {
+			continue
+		}
+		if err := u.Redis.Del(ctx, keys...).Err(); err != nil {
+			u.Log.Errorf("clearing cache %s: %v", pattern, err)
+		}
 	}
 }

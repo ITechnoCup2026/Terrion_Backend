@@ -55,7 +55,7 @@ func planningUseCase(t *testing.T, db *gorm.DB) *PlanningUseCase {
 		&repository.MemberRepository{}, &repository.CommodityRepository{},
 		&repository.VarietyRepository{}, &repository.CooperativeRepository{},
 		&repository.ReferencePriceRepository{}, &repository.SupplyRequestRepository{},
-		&repository.SeasonPlanRepository{}, projection, weatherUseCase, nil)
+		&repository.SeasonPlanRepository{}, projection, weatherUseCase, nil, nil, nil)
 }
 
 func seedPlanningFixture(t *testing.T) *gorm.DB {
