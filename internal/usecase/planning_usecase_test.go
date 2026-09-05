@@ -14,6 +14,7 @@ import (
 	"terrion-backend/internal/agronomy"
 	"terrion-backend/internal/constants"
 	"terrion-backend/internal/entity"
+	"terrion-backend/internal/model"
 	"terrion-backend/internal/repository"
 	"terrion-backend/internal/weather"
 )
@@ -31,6 +32,7 @@ func planningDB(t *testing.T) *gorm.DB {
 	if err := db.AutoMigrate(
 		&entity.Cooperative{}, &entity.CooperativeCapacity{}, &entity.Member{},
 		&entity.Commodity{}, &entity.ReferencePrice{}, &entity.SupplyContractRequest{},
+		&entity.AppUser{}, &entity.SeasonPlan{}, &entity.SeasonPlanItem{},
 	); err != nil {
 		t.Fatalf("migrating planning tables: %v", err)
 	}
@@ -53,7 +55,7 @@ func planningUseCase(t *testing.T, db *gorm.DB) *PlanningUseCase {
 		&repository.MemberRepository{}, &repository.CommodityRepository{},
 		&repository.VarietyRepository{}, &repository.CooperativeRepository{},
 		&repository.ReferencePriceRepository{}, &repository.SupplyRequestRepository{},
-		projection, weatherUseCase)
+		&repository.SeasonPlanRepository{}, projection, weatherUseCase, nil)
 }
 
 func seedPlanningFixture(t *testing.T) *gorm.DB {
@@ -232,3 +234,188 @@ func TestProposeIsDeterministic(t *testing.T) {
 }
 
 var _ = weather.GridCell{}
+
+func planningManager(t *testing.T, db *gorm.DB) *entity.AppUser {
+	t.Helper()
+
+	coopID := homeCoop
+	user := &entity.AppUser{
+		ID: "99999999-9999-4999-8999-999999999999", Role: constants.RolePengurus,
+		CooperativeID: &coopID, FullName: "Pengurus Uji", CreatedAt: planningNow,
+	}
+	if err := db.Create(user).Error; err != nil {
+		t.Fatalf("seeding manager: %v", err)
+	}
+	return user
+}
+
+func firstPlanRequest(t *testing.T, proposal Proposal) *model.ApplySeasonPlanRequest {
+	t.Helper()
+
+	plan := proposal.Plans[0]
+	assignments := make([]model.SeasonPlanAssignmentRequest, len(plan.Assignments))
+	for i, assignment := range plan.Assignments {
+		assignments[i] = model.SeasonPlanAssignmentRequest{
+			PlotID:       assignment.PlotID,
+			VarietyID:    assignment.VarietyID,
+			PlantingDate: agronomy.ToISODate(assignment.PlantingDate),
+		}
+	}
+
+	return &model.ApplySeasonPlanRequest{
+		SeasonLabel: proposal.Season.Label,
+		Objective:   string(plan.Objective),
+		Assignments: assignments,
+	}
+}
+
+func TestApplyCreatesBlocksMarkedWithThePlan(t *testing.T) {
+	db := seedPlanningFixture(t)
+	user := planningManager(t, db)
+	useCase := planningUseCase(t, db)
+
+	proposal, err := useCase.Propose(context.Background(), homeCoop, planSeason, planningNow)
+	if err != nil {
+		t.Fatalf("Propose: %v", err)
+	}
+
+	applied, err := useCase.Apply(
+		context.Background(), user, firstPlanRequest(t, proposal), planningNow)
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if applied.Blocks != 3 {
+		t.Fatalf("Blocks = %d, want 3", applied.Blocks)
+	}
+
+	blocks := []entity.Block{}
+	if err := db.Where("season_plan_id = ?", applied.PlanID).Find(&blocks).Error; err != nil {
+		t.Fatalf("reading plan blocks: %v", err)
+	}
+	if len(blocks) != 3 {
+		t.Fatalf("len(blocks) = %d, want 3", len(blocks))
+	}
+	for _, block := range blocks {
+		if !block.PlantingDate.After(planningNow) {
+			t.Errorf("block %s planted %s, want a future date",
+				block.ID, agronomy.ToISODate(block.PlantingDate))
+		}
+	}
+
+	items := []entity.SeasonPlanItem{}
+	if err := db.Where("plan_id = ?", applied.PlanID).Find(&items).Error; err != nil {
+		t.Fatalf("reading plan items: %v", err)
+	}
+	if len(items) != 3 {
+		t.Errorf("len(items) = %d, want 3", len(items))
+	}
+	for _, item := range items {
+		if item.BlockID == nil {
+			t.Errorf("item %s has no block_id", item.ID)
+		}
+		if item.ExpectedTonnesMid <= 0 {
+			t.Errorf("item %s stored no expected tonnage", item.ID)
+		}
+	}
+}
+
+func TestApplyRejectsAPlotFromAnotherCooperative(t *testing.T) {
+	db := seedPlanningFixture(t)
+	user := planningManager(t, db)
+	useCase := planningUseCase(t, db)
+
+	proposal, err := useCase.Propose(context.Background(), homeCoop, planSeason, planningNow)
+	if err != nil {
+		t.Fatalf("Propose: %v", err)
+	}
+
+	request := firstPlanRequest(t, proposal)
+	request.Assignments[0].PlotID = "plot-of-another-cooperative"
+
+	_, err = useCase.Apply(context.Background(), user, request, planningNow)
+
+	refusal := new(PlanRefusal)
+	if !errors.As(err, &refusal) || refusal.Code != constants.PlanAssignmentRejected {
+		t.Fatalf("err = %v, want %s", err, constants.PlanAssignmentRejected)
+	}
+}
+
+func TestApplyRejectsAPlantingDateInThePast(t *testing.T) {
+	db := seedPlanningFixture(t)
+	user := planningManager(t, db)
+	useCase := planningUseCase(t, db)
+
+	proposal, err := useCase.Propose(context.Background(), homeCoop, planSeason, planningNow)
+	if err != nil {
+		t.Fatalf("Propose: %v", err)
+	}
+
+	request := firstPlanRequest(t, proposal)
+	request.Assignments[0].PlantingDate = agronomy.ToISODate(
+		agronomy.AddDays(planningNow, -7))
+
+	_, err = useCase.Apply(context.Background(), user, request, planningNow)
+
+	refusal := new(PlanRefusal)
+	if !errors.As(err, &refusal) || refusal.Code != constants.PlanAssignmentRejected {
+		t.Fatalf("err = %v, want %s", err, constants.PlanAssignmentRejected)
+	}
+}
+
+func TestApplyRecomputesTonnageInsteadOfTrustingTheClient(t *testing.T) {
+	db := seedPlanningFixture(t)
+	user := planningManager(t, db)
+	useCase := planningUseCase(t, db)
+
+	proposal, err := useCase.Propose(context.Background(), homeCoop, planSeason, planningNow)
+	if err != nil {
+		t.Fatalf("Propose: %v", err)
+	}
+
+	applied, err := useCase.Apply(
+		context.Background(), user, firstPlanRequest(t, proposal), planningNow)
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+
+	items := []entity.SeasonPlanItem{}
+	if err := db.Where("plan_id = ?", applied.PlanID).
+		Order("plot_id").Find(&items).Error; err != nil {
+		t.Fatalf("reading plan items: %v", err)
+	}
+
+	expected := map[string]float64{}
+	for _, assignment := range proposal.Plans[0].Assignments {
+		expected[assignment.PlotID] = assignment.TonnesMid
+	}
+	for _, item := range items {
+		if item.ExpectedTonnesMid != expected[item.PlotID] {
+			t.Errorf("plot %s stored %v, want the server figure %v",
+				item.PlotID, item.ExpectedTonnesMid, expected[item.PlotID])
+		}
+	}
+}
+
+func TestApplyTwiceForTheSameSeasonRefuses(t *testing.T) {
+	db := seedPlanningFixture(t)
+	user := planningManager(t, db)
+	useCase := planningUseCase(t, db)
+
+	proposal, err := useCase.Propose(context.Background(), homeCoop, planSeason, planningNow)
+	if err != nil {
+		t.Fatalf("Propose: %v", err)
+	}
+
+	if _, err := useCase.Apply(
+		context.Background(), user, firstPlanRequest(t, proposal), planningNow); err != nil {
+		t.Fatalf("first Apply: %v", err)
+	}
+
+	_, err = useCase.Apply(
+		context.Background(), user, firstPlanRequest(t, proposal), planningNow)
+
+	refusal := new(PlanRefusal)
+	if !errors.As(err, &refusal) || refusal.Code != constants.PlanAlreadyApplied {
+		t.Fatalf("err = %v, want %s", err, constants.PlanAlreadyApplied)
+	}
+}
