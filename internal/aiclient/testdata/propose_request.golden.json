@@ -1,0 +1,55 @@
+{
+  "contract_version": "1.0",
+  "request_id": "5a1f0c9e-3c2a-4b3e-9f5a-77c0e2b1d004",
+  "seed": 20260905,
+  "season": {
+    "label": "MT I 2026/2027",
+    "start": "2026-10-01",
+    "end": "2027-03-31"
+  },
+  "objectives": [
+    "aman",
+    "pendapatan",
+    "pasar"
+  ],
+  "capacity_tonnes_per_week": 12.5,
+  "candidates": [
+    {
+      "id": "c001",
+      "plot_ref": "p1",
+      "area_ha": 0.82,
+      "commodity_ref": "k1",
+      "variety_ref": "v3",
+      "planting_date": "2026-10-05",
+      "harvest_start": "2027-01-02",
+      "harvest_end": "2027-01-16",
+      "tonnes_low": 2.91,
+      "tonnes_mid": 3.6,
+      "tonnes_high": 4.42,
+      "plausibility": "plausible",
+      "price_per_kg": 5200
+    },
+    {
+      "id": "c002",
+      "plot_ref": "p1",
+      "area_ha": 0.82,
+      "commodity_ref": "k1",
+      "variety_ref": "v3",
+      "planting_date": "2026-10-12",
+      "harvest_start": "2027-01-09",
+      "harvest_end": "2027-01-23",
+      "tonnes_low": 2.88,
+      "tonnes_mid": 3.57,
+      "tonnes_high": 4.39,
+      "plausibility": "plausible",
+      "price_per_kg": 5200
+    }
+  ],
+  "demand": [
+    {
+      "commodity_ref": "k1",
+      "iso_week": "2027-01-04",
+      "kg": 4000
+    }
+  ]
+}
