@@ -127,7 +127,7 @@ func (u *PlanningUseCase) Propose(
 		return Proposal{}, &PlanRefusal{Code: constants.PlanNoPlots}
 	}
 
-	normals, err := u.normalsFor(ctx, projection.Plots, now)
+	normals, err := u.normalsFor(ctx, projection.Plots)
 	if err != nil {
 		return Proposal{}, err
 	}
@@ -188,24 +188,40 @@ func (u *PlanningUseCase) Propose(
 }
 
 func (u *PlanningUseCase) normalsFor(
-	ctx context.Context, plots []entity.Plot, now time.Time,
+	ctx context.Context, plots []entity.Plot,
 ) (map[weather.GridCell][]agronomy.ClimateNormal, error) {
-	normals := map[weather.GridCell][]agronomy.ClimateNormal{}
-
+	cells := []weather.GridCell{}
+	seen := map[weather.GridCell]bool{}
 	for _, plot := range plots {
 		cell := weather.GridCell{GridLat: plot.GridLat, GridLng: plot.GridLng}
-		if _, loaded := normals[cell]; loaded {
+		if seen[cell] {
 			continue
 		}
+		seen[cell] = true
+		cells = append(cells, cell)
+	}
 
-		cellWeather, err := u.Weather.LoadWeatherFor(ctx, cell, time.Time{}, now)
-		if err != nil {
-			return nil, err
-		}
-		if len(cellWeather.Normals) == 0 {
+	stored, err := u.Weather.Repository.FindNormalsForCells(u.DB.WithContext(ctx), cells)
+	if err != nil {
+		return nil, fmt.Errorf("reading climate normals of %d cells: %w", len(cells), err)
+	}
+
+	normals := make(map[weather.GridCell][]agronomy.ClimateNormal, len(cells))
+	for _, cell := range cells {
+		rows := stored[cell]
+		if len(rows) == 0 {
 			return nil, &PlanRefusal{Code: constants.PlanNoClimateNormals}
 		}
-		normals[cell] = cellWeather.Normals
+
+		cellNormals := make([]agronomy.ClimateNormal, len(rows))
+		for i, row := range rows {
+			cellNormals[i] = agronomy.ClimateNormal{
+				DayOfYear: row.DayOfYear,
+				MeanC:     row.MeanC,
+				SdC:       row.SdC,
+			}
+		}
+		normals[cell] = cellNormals
 	}
 	return normals, nil
 }
@@ -561,7 +577,7 @@ func (u *PlanningUseCase) offeredOptions(
 		return nil, &PlanRefusal{Code: constants.PlanNoPlots}
 	}
 
-	normals, err := u.normalsFor(ctx, projection.Plots, now)
+	normals, err := u.normalsFor(ctx, projection.Plots)
 	if err != nil {
 		return nil, err
 	}
@@ -595,6 +611,16 @@ func (u *PlanningUseCase) offeredOptions(
 func (u *PlanningUseCase) persistPlan(
 	ctx context.Context, plan *entity.SeasonPlan, assignments []planning.Assignment,
 ) error {
+	plotIDs := make([]string, 0, len(assignments))
+	seen := map[string]bool{}
+	for _, assignment := range assignments {
+		if seen[assignment.PlotID] {
+			continue
+		}
+		seen[assignment.PlotID] = true
+		plotIDs = append(plotIDs, assignment.PlotID)
+	}
+
 	tx := u.DB.WithContext(ctx).Begin()
 	defer tx.Rollback()
 
@@ -602,30 +628,31 @@ func (u *PlanningUseCase) persistPlan(
 		return fmt.Errorf("creating season plan for %s: %w", plan.CooperativeID, err)
 	}
 
+	nextIndex, err := u.BlockRepository.NextOrderIndexes(tx, plotIDs)
+	if err != nil {
+		return fmt.Errorf("reading block order of plan %s: %w", plan.ID, err)
+	}
+
+	blocks := make([]entity.Block, 0, len(assignments))
+	items := make([]entity.SeasonPlanItem, 0, len(assignments))
 	for _, assignment := range assignments {
-		nextIndex, err := u.BlockRepository.NextOrderIndex(tx, assignment.PlotID)
-		if err != nil {
-			return fmt.Errorf("reading block order of plot %s: %w", assignment.PlotID, err)
-		}
+		order := nextIndex[assignment.PlotID]
+		nextIndex[assignment.PlotID] = order + 1
 
 		planID := plan.ID
-		block := &entity.Block{
-			ID:           uuid.NewString(),
+		blockID := uuid.NewString()
+		blocks = append(blocks, entity.Block{
+			ID:           blockID,
 			PlotID:       assignment.PlotID,
-			Label:        plots.BlockLabel(nextIndex),
+			Label:        plots.BlockLabel(order),
 			AreaHa:       assignment.AreaHa,
-			OrderIndex:   nextIndex,
+			OrderIndex:   order,
 			CommodityID:  assignment.CommodityID,
 			VarietyID:    assignment.VarietyID,
 			PlantingDate: assignment.PlantingDate,
 			SeasonPlanID: &planID,
-		}
-		if err := u.BlockRepository.Create(tx, block); err != nil {
-			return fmt.Errorf("creating plan block on plot %s: %w", assignment.PlotID, err)
-		}
-
-		blockID := block.ID
-		item := &entity.SeasonPlanItem{
+		})
+		items = append(items, entity.SeasonPlanItem{
 			ID:                   uuid.NewString(),
 			PlanID:               plan.ID,
 			PlotID:               assignment.PlotID,
@@ -641,9 +668,15 @@ func (u *PlanningUseCase) persistPlan(
 			ExpectedHarvestEnd:   assignment.Window.End,
 			Plausibility:         string(assignment.Plausibility),
 			BlockID:              &blockID,
+		})
+	}
+
+	if len(blocks) > 0 {
+		if err := tx.Create(&blocks).Error; err != nil {
+			return fmt.Errorf("creating plan blocks of %s: %w", plan.ID, err)
 		}
-		if err := tx.Create(item).Error; err != nil {
-			return fmt.Errorf("creating plan item for plot %s: %w", assignment.PlotID, err)
+		if err := tx.Create(&items).Error; err != nil {
+			return fmt.Errorf("creating plan items of %s: %w", plan.ID, err)
 		}
 	}
 

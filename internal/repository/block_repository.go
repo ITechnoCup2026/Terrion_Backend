@@ -55,6 +55,33 @@ func (r *BlockRepository) NextOrderIndex(db *gorm.DB, plotID string) (int, error
 	return *highest + 1, nil
 }
 
+func (r *BlockRepository) NextOrderIndexes(
+	db *gorm.DB, plotIDs []string,
+) (map[string]int, error) {
+	next := map[string]int{}
+	if len(plotIDs) == 0 {
+		return next, nil
+	}
+
+	rows := []struct {
+		PlotID  string
+		Highest int
+	}{}
+	err := db.Model(&entity.Block{}).
+		Select("plot_id, MAX(order_index) AS highest").
+		Where("plot_id IN ?", plotIDs).
+		Group("plot_id").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	for _, row := range rows {
+		next[row.PlotID] = row.Highest + 1
+	}
+	return next, nil
+}
+
 func (r *BlockRepository) FindHarvestedByPlotIDs(
 	db *gorm.DB, plotIDs []string,
 ) ([]entity.Block, error) {

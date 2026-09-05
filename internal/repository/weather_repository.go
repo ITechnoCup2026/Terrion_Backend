@@ -66,6 +66,33 @@ func (r *WeatherRepository) FindNormals(
 	return rows, err
 }
 
+func (r *WeatherRepository) FindNormalsForCells(
+	db *gorm.DB, cells []weather.GridCell,
+) (map[weather.GridCell][]entity.WeatherNormal, error) {
+	byCell := map[weather.GridCell][]entity.WeatherNormal{}
+	if len(cells) == 0 {
+		return byCell, nil
+	}
+
+	query := db.Session(&gorm.Session{})
+	matches := db.Session(&gorm.Session{})
+	for _, cell := range cells {
+		matches = matches.Or("grid_lat = ? AND grid_lng = ?", cell.GridLat, cell.GridLng)
+	}
+
+	rows := []entity.WeatherNormal{}
+	if err := query.Where(matches).Order("grid_lat, grid_lng, day_of_year").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	for _, row := range rows {
+		cell := weather.GridCell{GridLat: row.GridLat, GridLng: row.GridLng}
+		byCell[cell] = append(byCell[cell], row)
+	}
+	return byCell, nil
+}
+
 func (r *WeatherRepository) FindOccupiedGridCells(db *gorm.DB) ([]weather.GridCell, error) {
 	cells := []weather.GridCell{}
 	err := db.Model(&entity.Plot{}).
