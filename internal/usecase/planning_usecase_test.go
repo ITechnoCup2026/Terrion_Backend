@@ -29,8 +29,8 @@ func planningDB(t *testing.T) *gorm.DB {
 
 	db := projectionDB(t)
 	if err := db.AutoMigrate(
-		&entity.Cooperative{}, &entity.Member{}, &entity.Commodity{},
-		&entity.ReferencePrice{}, &entity.SupplyContractRequest{},
+		&entity.Cooperative{}, &entity.CooperativeCapacity{}, &entity.Member{},
+		&entity.Commodity{}, &entity.ReferencePrice{}, &entity.SupplyContractRequest{},
 	); err != nil {
 		t.Fatalf("migrating planning tables: %v", err)
 	}

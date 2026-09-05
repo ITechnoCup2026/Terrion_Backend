@@ -60,7 +60,11 @@ func (u *ProjectionUseCase) ProjectCooperative(
 	if err != nil {
 		return Projection{}, fmt.Errorf("reading plots of cooperative %s: %w", cooperativeID, err)
 	}
-	empty := Projection{Plots: plots, Windows: map[string]agronomy.HarvestWindow{}}
+	empty := Projection{
+		Plots:   plots,
+		Windows: map[string]agronomy.HarvestWindow{},
+		Yield:   agronomy.FitYieldModel(nil),
+	}
 	if len(plots) == 0 {
 		return empty, nil
 	}
