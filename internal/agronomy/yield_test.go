@@ -112,3 +112,71 @@ func TestPredictYieldPerHaNeverGoesNegative(t *testing.T) {
 		t.Errorf("PredictYieldPerHa = %v, want at least 0", got)
 	}
 }
+
+func TestPredictYieldRangeWithoutObservationsReturnsVarietyBounds(t *testing.T) {
+	variety := agronomy.Variety{
+		GddRequirement: 1860, BaseTempC: 12,
+		DaysToHarvestMin: 110, DaysToHarvestMax: 125,
+		YieldPerHaMin: 5, YieldPerHaMax: 7,
+	}
+	model := agronomy.FitYieldModel(nil)
+	features := agronomy.YieldFeatures{
+		VarietyBaselineYieldPerHa: 6,
+		GddRatio:                  1,
+		AreaHa:                    0.5,
+		MeanTempC:                 27.8,
+	}
+
+	low, mid, high := agronomy.PredictYieldRange(model, features, variety)
+
+	if low != variety.YieldPerHaMin {
+		t.Errorf("low = %v, want %v", low, variety.YieldPerHaMin)
+	}
+	if high != variety.YieldPerHaMax {
+		t.Errorf("high = %v, want %v", high, variety.YieldPerHaMax)
+	}
+	if mid != 6 {
+		t.Errorf("mid = %v, want 6", mid)
+	}
+}
+
+func TestPredictYieldRangeNarrowsAsObservationsAccumulate(t *testing.T) {
+	variety := agronomy.Variety{
+		GddRequirement: 1860, BaseTempC: 12,
+		DaysToHarvestMin: 110, DaysToHarvestMax: 125,
+		YieldPerHaMin: 5, YieldPerHaMax: 7,
+	}
+
+	observations := []agronomy.YieldObservation{}
+	for i := range 12 {
+		observations = append(observations, agronomy.YieldObservation{
+			ActualYieldPerHa: 6.1,
+			Features: agronomy.YieldFeatures{
+				VarietyBaselineYieldPerHa: 6,
+				GddRatio:                  1 + float64(i)*0.01,
+				AreaHa:                    0.5,
+				MeanTempC:                 27.8,
+			},
+		})
+	}
+	model := agronomy.FitYieldModel(observations)
+
+	features := agronomy.YieldFeatures{
+		VarietyBaselineYieldPerHa: 6,
+		GddRatio:                  1.05,
+		AreaHa:                    0.5,
+		MeanTempC:                 27.8,
+	}
+	low, mid, high := agronomy.PredictYieldRange(model, features, variety)
+
+	if !(low <= mid && mid <= high) {
+		t.Fatalf("range out of order: %v %v %v", low, mid, high)
+	}
+	if high-low >= variety.YieldPerHaMax-variety.YieldPerHaMin {
+		t.Errorf("width = %v, want narrower than variety bounds %v",
+			high-low, variety.YieldPerHaMax-variety.YieldPerHaMin)
+	}
+	if low < 0 {
+		t.Errorf("low = %v, want >= 0", low)
+	}
+}
