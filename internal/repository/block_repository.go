@@ -81,3 +81,10 @@ func (r *BlockRepository) FindPlantedInSeason(
 		Order("plot_id, order_index").Find(&blocks).Error
 	return blocks, err
 }
+
+func (r *BlockRepository) FindByPlanID(db *gorm.DB, planID string) ([]entity.Block, error) {
+	blocks := []entity.Block{}
+	err := db.Where("season_plan_id = ?", planID).
+		Order("plot_id, order_index").Find(&blocks).Error
+	return blocks, err
+}

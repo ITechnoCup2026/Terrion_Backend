@@ -639,3 +639,84 @@ func (u *PlanningUseCase) persistPlan(
 	}
 	return nil
 }
+
+type CancelledPlan struct {
+	PlanID string
+	Blocks int
+}
+
+func (u *PlanningUseCase) Cancel(
+	ctx context.Context, user *entity.AppUser, planID string, now time.Time,
+) (CancelledPlan, error) {
+	if user.CooperativeID == nil {
+		return CancelledPlan{}, ErrNoCooperative
+	}
+	db := u.DB.WithContext(ctx)
+
+	plan, err := u.SeasonPlanRepository.FindInCooperative(db, planID, *user.CooperativeID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return CancelledPlan{}, &PlanRefusal{Code: constants.PlanNotFound}
+	}
+	if err != nil {
+		return CancelledPlan{}, fmt.Errorf("reading plan %s: %w", planID, err)
+	}
+	if plan.Status == constants.PlanCancelled {
+		return CancelledPlan{}, &PlanRefusal{Code: constants.PlanAlreadyCancelled}
+	}
+
+	blocks, err := u.BlockRepository.FindByPlanID(db, plan.ID)
+	if err != nil {
+		return CancelledPlan{}, fmt.Errorf("reading blocks of plan %s: %w", plan.ID, err)
+	}
+	for _, block := range blocks {
+		if recorded(block) || !block.PlantingDate.After(agronomy.StartOfDay(now)) {
+			return CancelledPlan{}, &PlanRefusal{Code: constants.PlanPartiallyCancellable}
+		}
+	}
+
+	if err := u.releasePlan(ctx, plan, now); err != nil {
+		return CancelledPlan{}, err
+	}
+
+	if u.Catalog != nil {
+		u.Catalog.Invalidate(ctx, now)
+	}
+
+	return CancelledPlan{PlanID: plan.ID, Blocks: len(blocks)}, nil
+}
+
+func recorded(block entity.Block) bool {
+	return block.ActualHarvestDate != nil ||
+		block.ActualYieldKg != nil ||
+		block.ActualPricePerKg != nil ||
+		block.PaymentReceivedDate != nil
+}
+
+func (u *PlanningUseCase) releasePlan(
+	ctx context.Context, plan *entity.SeasonPlan, now time.Time,
+) error {
+	tx := u.DB.WithContext(ctx).Begin()
+	defer tx.Rollback()
+
+	if err := tx.Model(&entity.SeasonPlanItem{}).Where("plan_id = ?", plan.ID).
+		Update("block_id", nil).Error; err != nil {
+		return fmt.Errorf("releasing items of plan %s: %w", plan.ID, err)
+	}
+
+	if err := tx.Where("season_plan_id = ?", plan.ID).
+		Delete(&entity.Block{}).Error; err != nil {
+		return fmt.Errorf("deleting blocks of plan %s: %w", plan.ID, err)
+	}
+
+	cancelled := now
+	plan.Status = constants.PlanCancelled
+	plan.CancelledAt = &cancelled
+	if err := u.SeasonPlanRepository.Update(tx, plan); err != nil {
+		return fmt.Errorf("cancelling plan %s: %w", plan.ID, err)
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		return fmt.Errorf("committing the cancellation of plan %s: %w", plan.ID, err)
+	}
+	return nil
+}
