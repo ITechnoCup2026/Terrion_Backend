@@ -20,6 +20,12 @@ type YieldObservation struct {
 	Features         YieldFeatures
 }
 
+type YieldRange struct {
+	Low  float64
+	Mid  float64
+	High float64
+}
+
 type YieldModel struct {
 	MeanIndex     float64
 	Coefficients  []float64
@@ -131,10 +137,18 @@ func FitYieldModel(observations []YieldObservation) YieldModel {
 	}
 }
 
+func isFitted(model YieldModel) bool {
+	return len(model.Coefficients) == featureCount &&
+		len(model.FeatureMeans) == featureCount &&
+		len(model.FeatureSds) == featureCount
+}
+
 func PredictYieldPerHa(model YieldModel, features YieldFeatures) float64 {
 	fitted := model.MeanIndex
-	for j, value := range featureVector(features) {
-		fitted += model.Coefficients[j] * ((value - model.FeatureMeans[j]) / model.FeatureSds[j])
+	if isFitted(model) {
+		for j, value := range featureVector(features) {
+			fitted += model.Coefficients[j] * ((value - model.FeatureMeans[j]) / model.FeatureSds[j])
+		}
 	}
 
 	observations := float64(model.NObservations)
@@ -142,6 +156,23 @@ func PredictYieldPerHa(model YieldModel, features YieldFeatures) float64 {
 	index := 1 + (fitted-1)*trust
 
 	return math.Max(0, index*features.VarietyBaselineYieldPerHa)
+}
+
+func PredictYieldRange(model YieldModel, features YieldFeatures, variety Variety) YieldRange {
+	mid := PredictYieldPerHa(model, features)
+
+	observations := float64(model.NObservations)
+	trust := observations / (observations + constants.YieldShrinkageK)
+
+	modelHalf := constants.ZEarly * model.ResidualSd * features.VarietyBaselineYieldPerHa
+	referenceHalf := (variety.YieldPerHaMax - variety.YieldPerHaMin) / 2
+	half := trust*modelHalf + (1-trust)*referenceHalf
+
+	return YieldRange{
+		Low:  math.Max(0, mid-half),
+		Mid:  mid,
+		High: mid + half,
+	}
 }
 
 func solve(a [][]float64, b []float64) []float64 {
