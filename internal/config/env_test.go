@@ -28,6 +28,8 @@ func isolateEnvironment(t *testing.T) {
 		"REDIS_URL", "CRON_SECRET",
 		"SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY",
 		"SUPABASE_JWT_SECRET",
+		"AI_SERVICE_URL", "AI_SERVICE_TOKEN", "AI_SERVICE_TIMEOUT_MS",
+		"AI_WARMUP_INTERVAL",
 	} {
 		t.Setenv(name, "")
 	}

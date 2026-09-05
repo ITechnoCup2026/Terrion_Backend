@@ -46,6 +46,13 @@ type Config struct {
 		ServiceRoleKey string
 		JWTSecret      string
 	}
+
+	AI struct {
+		ServiceURL     string
+		Token          string
+		Timeout        int
+		WarmupInterval int
+	}
 }
 
 func NewConfig() *Config {
@@ -80,6 +87,11 @@ func NewConfig() *Config {
 	cfg.Supabase.AnonKey = getEnv("SUPABASE_ANON_KEY", "")
 	cfg.Supabase.ServiceRoleKey = getEnv("SUPABASE_SERVICE_ROLE_KEY", "")
 	cfg.Supabase.JWTSecret = getEnv("SUPABASE_JWT_SECRET", "")
+
+	cfg.AI.ServiceURL = getEnv("AI_SERVICE_URL", "")
+	cfg.AI.Token = getEnv("AI_SERVICE_TOKEN", "")
+	cfg.AI.Timeout = getEnvAsInt("AI_SERVICE_TIMEOUT_MS", 3500)
+	cfg.AI.WarmupInterval = getEnvAsInt("AI_WARMUP_INTERVAL", 0)
 
 	return cfg
 }

@@ -40,6 +40,7 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 	fertiliserRateRepository := &repository.FertiliserRateRepository{}
 	supplyRequestRepository := &repository.SupplyRequestRepository{}
 	publicPlotRepository := &repository.PublicPlotRepository{}
+	seasonPlanRepository := &repository.SeasonPlanRepository{}
 
 	goTrue := supabase.NewClient(
 		bootstrapConfig.Config.Supabase.URL,
@@ -91,6 +92,13 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 		bootstrapConfig.DB, bootstrapConfig.Log, bootstrapConfig.Validate,
 		cooperativeRepository, blockRepository, projectionUseCase)
 
+	planningUseCase := usecase.NewPlanningUseCase(
+		bootstrapConfig.DB, bootstrapConfig.Log, bootstrapConfig.Validate,
+		plotRepository, blockRepository, memberRepository, commodityRepository,
+		varietyRepository, cooperativeRepository, referencePriceRepository,
+		supplyRequestRepository, seasonPlanRepository,
+		projectionUseCase, weatherUseCase, catalogUseCase)
+
 	publicUseCase := usecase.NewPublicUseCase(
 		bootstrapConfig.DB, bootstrapConfig.Log,
 		publicPlotRepository, plotRepository, blockRepository,
@@ -111,6 +119,7 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 	rdkkController := http.NewRdkkController(rdkkUseCase, bootstrapConfig.Log)
 	dashboardController := http.NewDashboardController(dashboardUseCase, bootstrapConfig.Log)
 	plotController := http.NewPlotController(plotUseCase, bootstrapConfig.Log)
+	planningController := http.NewPlanningController(planningUseCase, bootstrapConfig.Log)
 	weatherController := http.NewWeatherController(weatherUseCase, bootstrapConfig.Log)
 
 	routeConfig := route.RouteConfig{
@@ -119,6 +128,7 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 		AuthController:      authController,
 		CatalogController:   catalogController,
 		DashboardController: dashboardController,
+		PlanningController:  planningController,
 		PlotController:      plotController,
 		PublicController:    publicController,
 		RdkkController:      rdkkController,

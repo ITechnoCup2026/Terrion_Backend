@@ -52,7 +52,12 @@ func (c *RdkkController) CreateInputOrder(ctx *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusUnauthorized, "Unauthorised")
 	}
 
-	created, err := c.UseCase.CreateInputOrder(ctx.UserContext(), user, time.Now())
+	season, err := seasonFromQuery(ctx)
+	if err != nil {
+		return err
+	}
+
+	created, err := c.UseCase.CreateInputOrder(ctx.UserContext(), user, season)
 	if err != nil {
 		if errors.Is(err, usecase.ErrNothingToOrder) {
 			return fiber.NewError(fiber.StatusUnprocessableEntity, constants.RdkkNothingToOrder)

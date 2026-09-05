@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -60,8 +61,11 @@ type Catalog struct {
 	Provinces   []string           `json:"provinces"`
 }
 
-func (u *CatalogUseCase) Load(ctx context.Context, now time.Time) (Catalog, error) {
-	key := constants.CatalogCacheKey + agronomy.ToISODate(now)
+func (u *CatalogUseCase) Load(
+	ctx context.Context, weeks int, now time.Time,
+) (Catalog, error) {
+	key := constants.CatalogCacheKey + agronomy.ToISODate(now) +
+		":" + strconv.Itoa(weeks)
 
 	if cached, found := u.readCache(ctx, key); found {
 		return cached, nil
@@ -78,7 +82,7 @@ func (u *CatalogUseCase) Load(ctx context.Context, now time.Time) (Catalog, erro
 	}
 
 	built := Catalog{
-		Listings:    catalog.BuildListings(sources, now, constants.DefaultHorizonWeeks),
+		Listings:    catalog.BuildListings(sources, now, weeks),
 		Commodities: []CatalogCommodity{},
 		Provinces:   []string{},
 	}
@@ -89,7 +93,7 @@ func (u *CatalogUseCase) Load(ctx context.Context, now time.Time) (Catalog, erro
 }
 
 func (u *CatalogUseCase) LoadForCooperative(
-	ctx context.Context, cooperativeID string, now time.Time,
+	ctx context.Context, cooperativeID string, weeks int, now time.Time,
 ) ([]catalog.Listing, error) {
 	cooperative := new(entity.Cooperative)
 	if err := u.CooperativeRepository.FindById(
@@ -102,7 +106,7 @@ func (u *CatalogUseCase) LoadForCooperative(
 		return nil, err
 	}
 
-	return catalog.BuildListings(sources, now, constants.DefaultHorizonWeeks), nil
+	return catalog.BuildListings(sources, now, weeks), nil
 }
 
 func (u *CatalogUseCase) sourcesFor(

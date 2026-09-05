@@ -639,3 +639,208 @@ func (u *PlanningUseCase) persistPlan(
 	}
 	return nil
 }
+
+type CancelledPlan struct {
+	PlanID string
+	Blocks int
+}
+
+func (u *PlanningUseCase) Cancel(
+	ctx context.Context, user *entity.AppUser, planID string, now time.Time,
+) (CancelledPlan, error) {
+	if user.CooperativeID == nil {
+		return CancelledPlan{}, ErrNoCooperative
+	}
+	db := u.DB.WithContext(ctx)
+
+	plan, err := u.SeasonPlanRepository.FindInCooperative(db, planID, *user.CooperativeID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return CancelledPlan{}, &PlanRefusal{Code: constants.PlanNotFound}
+	}
+	if err != nil {
+		return CancelledPlan{}, fmt.Errorf("reading plan %s: %w", planID, err)
+	}
+	if plan.Status == constants.PlanCancelled {
+		return CancelledPlan{}, &PlanRefusal{Code: constants.PlanAlreadyCancelled}
+	}
+
+	blocks, err := u.BlockRepository.FindByPlanID(db, plan.ID)
+	if err != nil {
+		return CancelledPlan{}, fmt.Errorf("reading blocks of plan %s: %w", plan.ID, err)
+	}
+	for _, block := range blocks {
+		if recorded(block) || !block.PlantingDate.After(agronomy.StartOfDay(now)) {
+			return CancelledPlan{}, &PlanRefusal{Code: constants.PlanPartiallyCancellable}
+		}
+	}
+
+	if err := u.releasePlan(ctx, plan, now); err != nil {
+		return CancelledPlan{}, err
+	}
+
+	if u.Catalog != nil {
+		u.Catalog.Invalidate(ctx, now)
+	}
+
+	return CancelledPlan{PlanID: plan.ID, Blocks: len(blocks)}, nil
+}
+
+func recorded(block entity.Block) bool {
+	return block.ActualHarvestDate != nil ||
+		block.ActualYieldKg != nil ||
+		block.ActualPricePerKg != nil ||
+		block.PaymentReceivedDate != nil
+}
+
+func (u *PlanningUseCase) releasePlan(
+	ctx context.Context, plan *entity.SeasonPlan, now time.Time,
+) error {
+	tx := u.DB.WithContext(ctx).Begin()
+	defer tx.Rollback()
+
+	if err := tx.Model(&entity.SeasonPlanItem{}).Where("plan_id = ?", plan.ID).
+		Update("block_id", nil).Error; err != nil {
+		return fmt.Errorf("releasing items of plan %s: %w", plan.ID, err)
+	}
+
+	if err := tx.Where("season_plan_id = ?", plan.ID).
+		Delete(&entity.Block{}).Error; err != nil {
+		return fmt.Errorf("deleting blocks of plan %s: %w", plan.ID, err)
+	}
+
+	cancelled := now
+	plan.Status = constants.PlanCancelled
+	plan.CancelledAt = &cancelled
+	if err := u.SeasonPlanRepository.Update(tx, plan); err != nil {
+		return fmt.Errorf("cancelling plan %s: %w", plan.ID, err)
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		return fmt.Errorf("committing the cancellation of plan %s: %w", plan.ID, err)
+	}
+	return nil
+}
+
+type StoredPlan struct {
+	Plan           entity.SeasonPlan
+	Items          []entity.SeasonPlanItem
+	MemberNames    map[string]string
+	PlotNames      map[string]string
+	CommodityNames map[string]string
+	VarietyNames   map[string]string
+}
+
+func (u *PlanningUseCase) List(
+	ctx context.Context, user *entity.AppUser,
+) ([]entity.SeasonPlan, error) {
+	if user.CooperativeID == nil {
+		return nil, ErrNoCooperative
+	}
+
+	plans, err := u.SeasonPlanRepository.FindByCooperativeID(
+		u.DB.WithContext(ctx), *user.CooperativeID)
+	if err != nil {
+		return nil, fmt.Errorf("reading plans of %s: %w", *user.CooperativeID, err)
+	}
+	return plans, nil
+}
+
+func (u *PlanningUseCase) Get(
+	ctx context.Context, user *entity.AppUser, planID string,
+) (StoredPlan, error) {
+	if user.CooperativeID == nil {
+		return StoredPlan{}, ErrNoCooperative
+	}
+	db := u.DB.WithContext(ctx)
+
+	plan, err := u.SeasonPlanRepository.FindInCooperative(db, planID, *user.CooperativeID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return StoredPlan{}, &PlanRefusal{Code: constants.PlanNotFound}
+	}
+	if err != nil {
+		return StoredPlan{}, fmt.Errorf("reading plan %s: %w", planID, err)
+	}
+
+	items, err := u.SeasonPlanRepository.FindItemsByPlanID(db, plan.ID)
+	if err != nil {
+		return StoredPlan{}, fmt.Errorf("reading items of plan %s: %w", plan.ID, err)
+	}
+
+	memberNames, err := u.memberNames(ctx, *user.CooperativeID)
+	if err != nil {
+		return StoredPlan{}, err
+	}
+
+	plotNames, err := u.plotNames(db, *user.CooperativeID)
+	if err != nil {
+		return StoredPlan{}, err
+	}
+
+	commodityNames, varietyNames, err := u.catalogueNames(db, items)
+	if err != nil {
+		return StoredPlan{}, err
+	}
+
+	return StoredPlan{
+		Plan:           *plan,
+		Items:          items,
+		MemberNames:    memberNames,
+		PlotNames:      plotNames,
+		CommodityNames: commodityNames,
+		VarietyNames:   varietyNames,
+	}, nil
+}
+
+func (u *PlanningUseCase) plotNames(
+	db *gorm.DB, cooperativeID string,
+) (map[string]string, error) {
+	rows, err := u.PlotRepository.FindByCooperativeID(db, cooperativeID)
+	if err != nil {
+		return nil, fmt.Errorf("reading plots of cooperative %s: %w", cooperativeID, err)
+	}
+
+	names := make(map[string]string, len(rows))
+	for _, plot := range rows {
+		names[plot.ID] = plot.Name
+	}
+	return names, nil
+}
+
+func (u *PlanningUseCase) catalogueNames(
+	db *gorm.DB, items []entity.SeasonPlanItem,
+) (map[string]string, map[string]string, error) {
+	commodityIDs := []string{}
+	varietyIDs := []string{}
+	seenCommodity := map[string]bool{}
+	seenVariety := map[string]bool{}
+
+	for _, item := range items {
+		if !seenCommodity[item.CommodityID] {
+			seenCommodity[item.CommodityID] = true
+			commodityIDs = append(commodityIDs, item.CommodityID)
+		}
+		if !seenVariety[item.VarietyID] {
+			seenVariety[item.VarietyID] = true
+			varietyIDs = append(varietyIDs, item.VarietyID)
+		}
+	}
+
+	commodities, err := u.CommodityRepository.FindByIDs(db, commodityIDs)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading commodities of a plan: %w", err)
+	}
+	varieties, err := u.VarietyRepository.FindByIDs(db, varietyIDs)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading varieties of a plan: %w", err)
+	}
+
+	commodityNames := make(map[string]string, len(commodities))
+	for _, commodity := range commodities {
+		commodityNames[commodity.ID] = commodity.Name
+	}
+	varietyNames := make(map[string]string, len(varieties))
+	for _, variety := range varieties {
+		varietyNames[variety.ID] = variety.Name
+	}
+	return commodityNames, varietyNames, nil
+}

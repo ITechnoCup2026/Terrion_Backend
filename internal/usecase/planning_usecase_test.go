@@ -419,3 +419,220 @@ func TestApplyTwiceForTheSameSeasonRefuses(t *testing.T) {
 		t.Fatalf("err = %v, want %s", err, constants.PlanAlreadyApplied)
 	}
 }
+
+func applyFirstPlan(t *testing.T, db *gorm.DB) (*PlanningUseCase, *entity.AppUser, AppliedPlan) {
+	t.Helper()
+
+	user := planningManager(t, db)
+	useCase := planningUseCase(t, db)
+
+	proposal, err := useCase.Propose(context.Background(), homeCoop, planSeason, planningNow)
+	if err != nil {
+		t.Fatalf("Propose: %v", err)
+	}
+
+	applied, err := useCase.Apply(
+		context.Background(), user, firstPlanRequest(t, proposal), planningNow)
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	return useCase, user, applied
+}
+
+func TestCancelRemovesPlanBlocksAndKeepsFieldRecords(t *testing.T) {
+	db := seedPlanningFixture(t)
+	useCase, user, applied := applyFirstPlan(t, db)
+
+	if err := db.Create(&entity.Block{
+		ID: "block-kader", PlotID: "plot-1", Label: "BLOK Z", AreaHa: 0.5, OrderIndex: 9,
+		CommodityID: riceCommodity, VarietyID: "variety-rice",
+		PlantingDate: agronomy.AddDays(planningNow, -30),
+	}).Error; err != nil {
+		t.Fatalf("seeding field record: %v", err)
+	}
+
+	cancelled, err := useCase.Cancel(context.Background(), user, applied.PlanID, planningNow)
+	if err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	if cancelled.Blocks != 3 {
+		t.Errorf("Blocks = %d, want 3", cancelled.Blocks)
+	}
+
+	remaining := []entity.Block{}
+	if err := db.Where("season_plan_id = ?", applied.PlanID).Find(&remaining).Error; err != nil {
+		t.Fatalf("reading plan blocks: %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Errorf("len(remaining) = %d, want 0", len(remaining))
+	}
+
+	kader := new(entity.Block)
+	if err := db.Where("id = ?", "block-kader").Take(kader).Error; err != nil {
+		t.Fatalf("the field record was deleted with the plan: %v", err)
+	}
+
+	plan := new(entity.SeasonPlan)
+	if err := db.Where("id = ?", applied.PlanID).Take(plan).Error; err != nil {
+		t.Fatalf("reading plan: %v", err)
+	}
+	if plan.Status != constants.PlanCancelled {
+		t.Errorf("Status = %q, want %q", plan.Status, constants.PlanCancelled)
+	}
+	if plan.CancelledAt == nil {
+		t.Error("CancelledAt = nil, want a timestamp")
+	}
+
+	items := []entity.SeasonPlanItem{}
+	if err := db.Where("plan_id = ?", applied.PlanID).Find(&items).Error; err != nil {
+		t.Fatalf("reading plan items: %v", err)
+	}
+	if len(items) != 3 {
+		t.Fatalf("len(items) = %d, want the plan to stay readable after cancelling", len(items))
+	}
+	for _, item := range items {
+		if item.BlockID != nil {
+			t.Errorf("item %s still points at a deleted block", item.ID)
+		}
+	}
+}
+
+func TestCancelTwiceRefuses(t *testing.T) {
+	db := seedPlanningFixture(t)
+	useCase, user, applied := applyFirstPlan(t, db)
+
+	if _, err := useCase.Cancel(
+		context.Background(), user, applied.PlanID, planningNow); err != nil {
+		t.Fatalf("first Cancel: %v", err)
+	}
+
+	_, err := useCase.Cancel(context.Background(), user, applied.PlanID, planningNow)
+
+	refusal := new(PlanRefusal)
+	if !errors.As(err, &refusal) || refusal.Code != constants.PlanAlreadyCancelled {
+		t.Fatalf("err = %v, want %s", err, constants.PlanAlreadyCancelled)
+	}
+}
+
+func TestCancelRefusesAPlanOfAnotherCooperative(t *testing.T) {
+	db := seedPlanningFixture(t)
+	useCase, _, applied := applyFirstPlan(t, db)
+
+	other := otherCoop
+	stranger := &entity.AppUser{
+		ID: "88888888-8888-4888-8888-888888888888", Role: constants.RolePengurus,
+		CooperativeID: &other, FullName: "Pengurus Lain", CreatedAt: planningNow,
+	}
+	if err := db.Create(stranger).Error; err != nil {
+		t.Fatalf("seeding the other manager: %v", err)
+	}
+
+	_, err := useCase.Cancel(context.Background(), stranger, applied.PlanID, planningNow)
+
+	refusal := new(PlanRefusal)
+	if !errors.As(err, &refusal) || refusal.Code != constants.PlanNotFound {
+		t.Fatalf("err = %v, want %s", err, constants.PlanNotFound)
+	}
+}
+
+func TestCancelRefusesOnceAPlanBlockCarriesAHarvest(t *testing.T) {
+	db := seedPlanningFixture(t)
+	useCase, user, applied := applyFirstPlan(t, db)
+
+	harvested := agronomy.AddDays(planningNow, 200)
+	if err := db.Model(&entity.Block{}).
+		Where("season_plan_id = ?", applied.PlanID).
+		Limit(1).
+		Update("actual_harvest_date", harvested).Error; err != nil {
+		t.Fatalf("recording a harvest on a plan block: %v", err)
+	}
+
+	_, err := useCase.Cancel(context.Background(), user, applied.PlanID, planningNow)
+
+	refusal := new(PlanRefusal)
+	if !errors.As(err, &refusal) || refusal.Code != constants.PlanPartiallyCancellable {
+		t.Fatalf("err = %v, want %s", err, constants.PlanPartiallyCancellable)
+	}
+
+	remaining := []entity.Block{}
+	if err := db.Where("season_plan_id = ?", applied.PlanID).Find(&remaining).Error; err != nil {
+		t.Fatalf("reading plan blocks: %v", err)
+	}
+	if len(remaining) != 3 {
+		t.Errorf("len(remaining) = %d, want the refusal to change nothing", len(remaining))
+	}
+}
+
+func TestGetReturnsThePlanWithNamesResolved(t *testing.T) {
+	db := seedPlanningFixture(t)
+	useCase, user, applied := applyFirstPlan(t, db)
+
+	stored, err := useCase.Get(context.Background(), user, applied.PlanID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+
+	if stored.Plan.SeasonLabel != planSeason {
+		t.Errorf("SeasonLabel = %q, want %q", stored.Plan.SeasonLabel, planSeason)
+	}
+	if len(stored.Items) != 3 {
+		t.Fatalf("len(Items) = %d, want 3", len(stored.Items))
+	}
+	for _, item := range stored.Items {
+		if stored.MemberNames[item.MemberID] == "" {
+			t.Errorf("member %s has no name", item.MemberID)
+		}
+		if stored.PlotNames[item.PlotID] == "" {
+			t.Errorf("plot %s has no name", item.PlotID)
+		}
+		if stored.VarietyNames[item.VarietyID] == "" {
+			t.Errorf("variety %s has no name", item.VarietyID)
+		}
+		if stored.CommodityNames[item.CommodityID] == "" {
+			t.Errorf("commodity %s has no name", item.CommodityID)
+		}
+	}
+}
+
+func TestGetRefusesAPlanOfAnotherCooperative(t *testing.T) {
+	db := seedPlanningFixture(t)
+	useCase, _, applied := applyFirstPlan(t, db)
+
+	other := otherCoop
+	stranger := &entity.AppUser{
+		ID: "77777777-7777-4777-8777-777777777777", Role: constants.RoleKader,
+		CooperativeID: &other, FullName: "Kader Lain", CreatedAt: planningNow,
+	}
+	if err := db.Create(stranger).Error; err != nil {
+		t.Fatalf("seeding the other member: %v", err)
+	}
+
+	_, err := useCase.Get(context.Background(), stranger, applied.PlanID)
+
+	refusal := new(PlanRefusal)
+	if !errors.As(err, &refusal) || refusal.Code != constants.PlanNotFound {
+		t.Fatalf("err = %v, want %s", err, constants.PlanNotFound)
+	}
+}
+
+func TestListReturnsCancelledPlansToo(t *testing.T) {
+	db := seedPlanningFixture(t)
+	useCase, user, applied := applyFirstPlan(t, db)
+
+	if _, err := useCase.Cancel(
+		context.Background(), user, applied.PlanID, planningNow); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+
+	plans, err := useCase.List(context.Background(), user)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+
+	if len(plans) != 1 {
+		t.Fatalf("len(plans) = %d, want 1", len(plans))
+	}
+	if plans[0].Status != constants.PlanCancelled {
+		t.Errorf("Status = %q, want %q", plans[0].Status, constants.PlanCancelled)
+	}
+}

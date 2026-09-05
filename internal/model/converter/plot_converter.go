@@ -103,6 +103,7 @@ func PlotDetailToResponse(detail usecase.PlotDetail) *model.PlotDetailResponse {
 			VarietyID:      block.VarietyID,
 			VarietyName:    variety.Name,
 			PlantingDate:   agronomy.ToISODate(block.PlantingDate),
+			FromPlan:       block.SeasonPlanID != nil,
 			Window:         HarvestWindowToResponse(window, true),
 			ExpectedTonnes: tonnes,
 			Price:          price,
