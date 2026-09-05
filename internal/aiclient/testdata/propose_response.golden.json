@@ -1,0 +1,54 @@
+{
+  "contract_version": "1.0",
+  "request_id": "5a1f0c9e-3c2a-4b3e-9f5a-77c0e2b1d004",
+  "solver": "cp-sat",
+  "solver_version": "1.0.0",
+  "elapsed_ms": 412,
+  "plans": [
+    {
+      "objective": "aman",
+      "candidate_ids": ["c001", "c014", "c087"],
+      "metrics": {
+        "peak_tonnes_p50": 9.1,
+        "peak_tonnes_p90": 11.8,
+        "total_tonnes": 31.4,
+        "gross_value": 163280000.0,
+        "demand_covered_kg": 12000
+      },
+      "narrative": "Rencana ini menyebar panen ke lima minggu, sehingga puncak mingguan tertinggi tetap di bawah kapasitas koperasi.",
+      "narrative_source": "llm"
+    },
+    {
+      "objective": "pendapatan",
+      "candidate_ids": ["c002", "c021", "c090"],
+      "metrics": {
+        "peak_tonnes_p50": 12.7,
+        "peak_tonnes_p90": 16.3,
+        "total_tonnes": 33.9,
+        "gross_value": 178420000.0,
+        "demand_covered_kg": 9000
+      },
+      "narrative": "Rencana ini mengejar nilai panen tertinggi pada harga acuan musiman, dengan puncak mingguan yang lebih tinggi.",
+      "narrative_source": "llm"
+    },
+    {
+      "objective": "pasar",
+      "candidate_ids": ["c003", "c018", "c088"],
+      "metrics": {
+        "peak_tonnes_p50": 10.4,
+        "peak_tonnes_p90": 13.6,
+        "total_tonnes": 32.1,
+        "gross_value": 169050000.0,
+        "demand_covered_kg": 15000
+      },
+      "narrative": "Rencana ini menutup permintaan pembeli terbanyak dengan menempatkan panen pada minggu yang pernah diminta.",
+      "narrative_source": "template"
+    }
+  ],
+  "diagnostics": {
+    "evaluations": 18420,
+    "monte_carlo_draws": 2000,
+    "objective_status": "OPTIMAL",
+    "degraded": []
+  }
+}
