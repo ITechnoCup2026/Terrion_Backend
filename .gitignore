@@ -1,12 +1,8 @@
 .superpowers/
 .claude/
-docs/
 
 # Environment
 .env
-
-# Markdown files
-*.md
 
 # Build artifacts
 /bin/
