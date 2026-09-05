@@ -144,6 +144,22 @@ func PredictYieldPerHa(model YieldModel, features YieldFeatures) float64 {
 	return math.Max(0, index*features.VarietyBaselineYieldPerHa)
 }
 
+func PredictYieldRange(
+	model YieldModel, features YieldFeatures, variety Variety,
+) (float64, float64, float64) {
+	mid := PredictYieldPerHa(model, features)
+
+	if model.NObservations == 0 {
+		return variety.YieldPerHaMin, mid, variety.YieldPerHaMax
+	}
+
+	observations := float64(model.NObservations)
+	trust := observations / (observations + constants.YieldShrinkageK)
+	half := constants.ZEarly * model.ResidualSd * trust * features.VarietyBaselineYieldPerHa
+
+	return math.Max(0, mid-half), mid, mid + half
+}
+
 func solve(a [][]float64, b []float64) []float64 {
 	size := len(b)
 	augmented := make([][]float64, size)
