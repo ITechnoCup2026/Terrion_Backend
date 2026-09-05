@@ -23,6 +23,7 @@ const (
 
 const (
 	DefaultHorizonWeeks = 12
+	MaxHorizonWeeks     = 52
 	PileUpMinPlots      = 2
 	UpcomingDays        = 7
 	UpcomingLimit       = 5

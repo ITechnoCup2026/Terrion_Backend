@@ -38,7 +38,7 @@ func NewCatalogController(
 func (c *CatalogController) Get(ctx *fiber.Ctx) error {
 	now := time.Now()
 
-	built, err := c.UseCase.Load(ctx.UserContext(), now)
+	built, err := c.UseCase.Load(ctx.UserContext(), horizonFromQuery(ctx), now)
 	if err != nil {
 		c.Log.Errorf("loading catalogue: %v", err)
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to load catalogue")
@@ -53,7 +53,7 @@ func (c *CatalogController) Get(ctx *fiber.Ctx) error {
 
 func (c *CatalogController) GetForCooperative(ctx *fiber.Ctx) error {
 	listings, err := c.UseCase.LoadForCooperative(
-		ctx.UserContext(), ctx.Params("id"), time.Now())
+		ctx.UserContext(), ctx.Params("id"), horizonFromQuery(ctx), time.Now())
 	if err != nil {
 		c.Log.Errorf("loading cooperative listings: %v", err)
 		return fiber.NewError(fiber.StatusNotFound, "cooperative not found")

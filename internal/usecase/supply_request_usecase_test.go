@@ -66,7 +66,8 @@ func onlyListing(t *testing.T, db *gorm.DB) catalog.Listing {
 	t.Helper()
 
 	listings, err := catalogUseCase(t, db).
-		LoadForCooperative(context.Background(), homeCoop, projectionNow)
+		LoadForCooperative(
+			context.Background(), homeCoop, constants.DefaultHorizonWeeks, projectionNow)
 	if err != nil {
 		t.Fatalf("LoadForCooperative: %v", err)
 	}
@@ -349,7 +350,7 @@ func TestListSupplyRequestsSplitsByWhoIsAsking(t *testing.T) {
 func TestCatalogLoadCollectsFilterOptionsFromWhatIsListed(t *testing.T) {
 	db, _ := commerceFixture(t)
 
-	built, err := catalogUseCase(t, db).Load(context.Background(), projectionNow)
+	built, err := catalogUseCase(t, db).Load(context.Background(), constants.DefaultHorizonWeeks, projectionNow)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -367,5 +368,26 @@ func TestCatalogLoadCollectsFilterOptionsFromWhatIsListed(t *testing.T) {
 			t.Errorf("listing %s spans %d days, want a full week",
 				listing.ID, agronomy.DaysBetween(listing.WeekStart, listing.WeekEnd))
 		}
+	}
+}
+
+func TestCatalogHorizonDecidesWhichWeeksAreListed(t *testing.T) {
+	db, _ := commerceFixture(t)
+
+	near, err := catalogUseCase(t, db).
+		LoadForCooperative(context.Background(), homeCoop, 1, projectionNow)
+	if err != nil {
+		t.Fatalf("LoadForCooperative: %v", err)
+	}
+
+	far, err := catalogUseCase(t, db).
+		LoadForCooperative(context.Background(), homeCoop, constants.MaxHorizonWeeks, projectionNow)
+	if err != nil {
+		t.Fatalf("LoadForCooperative: %v", err)
+	}
+
+	if len(far) <= len(near) {
+		t.Errorf("far horizon listed %d weeks, near listed %d: a longer horizon must list more",
+			len(far), len(near))
 	}
 }

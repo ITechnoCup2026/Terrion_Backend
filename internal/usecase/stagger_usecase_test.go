@@ -69,7 +69,7 @@ func seedFuturePlantings(t *testing.T, db *gorm.DB) {
 func suggestionNaming(t *testing.T, db *gorm.DB, blockID string) agronomy.StaggerSuggestion {
 	t.Helper()
 
-	loaded, err := dashboardUseCase(t, db).Load(context.Background(), homeCoop, projectionNow)
+	loaded, err := dashboardUseCase(t, db).Load(context.Background(), homeCoop, constants.DefaultHorizonWeeks, projectionNow)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}

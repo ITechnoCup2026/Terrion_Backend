@@ -6,6 +6,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/sirupsen/logrus"
 
+	"terrion-backend/internal/constants"
 	"terrion-backend/internal/model"
 	"terrion-backend/internal/model/converter"
 	"terrion-backend/internal/usecase"
@@ -28,7 +29,8 @@ func (c *DashboardController) Get(ctx *fiber.Ctx) error {
 		return err
 	}
 
-	loaded, err := c.UseCase.Load(ctx.UserContext(), *user.CooperativeID, time.Now())
+	loaded, err := c.UseCase.Load(
+		ctx.UserContext(), *user.CooperativeID, horizonFromQuery(ctx), time.Now())
 	if err != nil {
 		c.Log.Errorf("loading dashboard: %v", err)
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to load dashboard")
@@ -37,4 +39,15 @@ func (c *DashboardController) Get(ctx *fiber.Ctx) error {
 	return ctx.JSON(model.WebResponse[*model.DashboardResponse]{
 		Data: converter.DashboardToResponse(loaded),
 	})
+}
+
+func horizonFromQuery(ctx *fiber.Ctx) int {
+	weeks := ctx.QueryInt("weeks", constants.DefaultHorizonWeeks)
+	if weeks <= 0 {
+		return constants.DefaultHorizonWeeks
+	}
+	if weeks > constants.MaxHorizonWeeks {
+		return constants.MaxHorizonWeeks
+	}
+	return weeks
 }

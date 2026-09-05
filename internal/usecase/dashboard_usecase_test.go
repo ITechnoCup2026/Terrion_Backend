@@ -51,7 +51,7 @@ func dashboardFixture(t *testing.T) *gorm.DB {
 func TestDashboardLoadReturnsAFullHorizonAndUpcomingRows(t *testing.T) {
 	db := dashboardFixture(t)
 
-	loaded, err := dashboardUseCase(t, db).Load(context.Background(), homeCoop, projectionNow)
+	loaded, err := dashboardUseCase(t, db).Load(context.Background(), homeCoop, constants.DefaultHorizonWeeks, projectionNow)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestDashboardLoadReturnsAFullHorizonAndUpcomingRows(t *testing.T) {
 func TestDashboardLoadReportsNoImpactBeforeAnythingHasHappened(t *testing.T) {
 	db := dashboardFixture(t)
 
-	loaded, err := dashboardUseCase(t, db).Load(context.Background(), homeCoop, projectionNow)
+	loaded, err := dashboardUseCase(t, db).Load(context.Background(), homeCoop, constants.DefaultHorizonWeeks, projectionNow)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestDashboardLoadReportsNoImpactBeforeAnythingHasHappened(t *testing.T) {
 func TestDashboardLoadStaysInsideItsCooperative(t *testing.T) {
 	db := dashboardFixture(t)
 
-	loaded, err := dashboardUseCase(t, db).Load(context.Background(), homeCoop, projectionNow)
+	loaded, err := dashboardUseCase(t, db).Load(context.Background(), homeCoop, constants.DefaultHorizonWeeks, projectionNow)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -141,5 +141,19 @@ func TestParseStaggerLogOfAnEmptyOrBrokenColumnIsNothing(t *testing.T) {
 		if records := parseStaggerLog(raw); len(records) != 0 {
 			t.Errorf("parseStaggerLog(%s) = %+v, want nothing", raw, records)
 		}
+	}
+}
+
+func TestDashboardHorizonFollowsWhatTheCallerAsksFor(t *testing.T) {
+	db := dashboardFixture(t)
+
+	loaded, err := dashboardUseCase(t, db).
+		Load(context.Background(), homeCoop, 26, projectionNow)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if len(loaded.Weeks) != 26 {
+		t.Errorf("len(Weeks) = %d, want 26", len(loaded.Weeks))
 	}
 }

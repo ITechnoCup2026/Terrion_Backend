@@ -75,7 +75,7 @@ type NamedCalibration struct {
 }
 
 func (u *DashboardUseCase) Load(
-	ctx context.Context, cooperativeID string, now time.Time,
+	ctx context.Context, cooperativeID string, weeks int, now time.Time,
 ) (Dashboard, error) {
 	projection, err := u.Projection.ProjectCooperative(ctx, cooperativeID, now)
 	if err != nil {
@@ -123,8 +123,7 @@ func (u *DashboardUseCase) Load(
 	}
 
 	return Dashboard{
-		Weeks: dashboard.WeeklyProjection(
-			projection.Projections, now, constants.DefaultHorizonWeeks),
+		Weeks:          dashboard.WeeklyProjection(projection.Projections, now, weeks),
 		Flagged:        flagged,
 		Lead:           dashboard.SelectLeadCollision(flagged),
 		Suggestions:    collisions.Suggestions,

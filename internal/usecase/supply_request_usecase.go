@@ -83,7 +83,8 @@ func (u *SupplyRequestUseCase) Create(
 		return nil, ErrListingUnknown
 	}
 
-	listings, err := u.Catalog.LoadForCooperative(ctx, parsed.CooperativeID, now)
+	listings, err := u.Catalog.LoadForCooperative(
+		ctx, parsed.CooperativeID, constants.DefaultHorizonWeeks, now)
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +189,8 @@ func (u *SupplyRequestUseCase) checkAllocation(
 	// found. The tradeoff: Tonnes reflects today's projection, not whatever it
 	// was when the request was made -- the same live-recompute every listing
 	// in this system already accepts.
-	listings, err := u.Catalog.LoadForCooperative(ctx, request.CooperativeID, request.WindowStart)
+	listings, err := u.Catalog.LoadForCooperative(
+		ctx, request.CooperativeID, constants.DefaultHorizonWeeks, request.WindowStart)
 	if err != nil {
 		return err
 	}

@@ -96,13 +96,12 @@ func (u *RdkkUseCase) LoadSeason(
 }
 
 func (u *RdkkUseCase) CreateInputOrder(
-	ctx context.Context, user *entity.AppUser, now time.Time,
+	ctx context.Context, user *entity.AppUser, season Season,
 ) (CreatedInputOrder, error) {
 	if user.CooperativeID == nil {
 		return CreatedInputOrder{}, ErrNoCooperative
 	}
 	cooperativeID := *user.CooperativeID
-	season := DefaultSeason(now)
 
 	aggregate, err := u.aggregateSeason(ctx, cooperativeID, season)
 	if err != nil {

@@ -138,6 +138,7 @@ type PlotBlockResponse struct {
 	VarietyID      string                 `json:"variety_id"`
 	VarietyName    string                 `json:"variety_name"`
 	PlantingDate   string                 `json:"planting_date"`
+	FromPlan       bool                   `json:"from_plan"`
 	Window         *HarvestWindowResponse `json:"window"`
 	ExpectedTonnes *float64               `json:"expected_tonnes"`
 	// Nil when the plot's province has no panel for this commodity. Most of

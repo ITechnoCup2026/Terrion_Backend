@@ -112,7 +112,7 @@ func TestRdkkCreateInputOrderStoresADraftWithNoPrices(t *testing.T) {
 	db, user := rdkkFixture(t)
 
 	created, err := rdkkUseCase(t, db).
-		CreateInputOrder(context.Background(), user, projectionNow)
+		CreateInputOrder(context.Background(), user, DefaultSeason(projectionNow))
 	if err != nil {
 		t.Fatalf("CreateInputOrder: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestRdkkCreateInputOrderRefusesWhenThereIsNothingToOrder(t *testing.T) {
 		t.Fatalf("clearing rates: %v", err)
 	}
 
-	_, err := rdkkUseCase(t, db).CreateInputOrder(context.Background(), user, projectionNow)
+	_, err := rdkkUseCase(t, db).CreateInputOrder(context.Background(), user, DefaultSeason(projectionNow))
 
 	if !errors.Is(err, ErrNothingToOrder) {
 		t.Errorf("err = %v, want ErrNothingToOrder", err)
@@ -170,7 +170,7 @@ func TestRdkkCreateInputOrderRefusesAnAccountWithNoCooperative(t *testing.T) {
 	db, _ := rdkkFixture(t)
 	buyer := &entity.AppUser{ID: "buyer-1", Role: constants.RoleBuyer}
 
-	_, err := rdkkUseCase(t, db).CreateInputOrder(context.Background(), buyer, projectionNow)
+	_, err := rdkkUseCase(t, db).CreateInputOrder(context.Background(), buyer, DefaultSeason(projectionNow))
 
 	if !errors.Is(err, ErrNoCooperative) {
 		t.Errorf("err = %v, want ErrNoCooperative", err)
@@ -181,7 +181,7 @@ func TestRdkkListInputOrdersReturnsTheOrderWithItsLines(t *testing.T) {
 	db, user := rdkkFixture(t)
 	useCase := rdkkUseCase(t, db)
 
-	created, err := useCase.CreateInputOrder(context.Background(), user, projectionNow)
+	created, err := useCase.CreateInputOrder(context.Background(), user, DefaultSeason(projectionNow))
 	if err != nil {
 		t.Fatalf("CreateInputOrder: %v", err)
 	}
@@ -208,7 +208,7 @@ func TestRdkkListInputOrdersExcludesAnotherCooperatives(t *testing.T) {
 	db, user := rdkkFixture(t)
 	useCase := rdkkUseCase(t, db)
 
-	if _, err := useCase.CreateInputOrder(context.Background(), user, projectionNow); err != nil {
+	if _, err := useCase.CreateInputOrder(context.Background(), user, DefaultSeason(projectionNow)); err != nil {
 		t.Fatalf("CreateInputOrder: %v", err)
 	}
 
@@ -242,5 +242,44 @@ func TestDefaultSeasonReachesBackAYear(t *testing.T) {
 	}
 	if season.Label != constants.RdkkDefaultLabel {
 		t.Errorf("Label = %q, want %q", season.Label, constants.RdkkDefaultLabel)
+	}
+}
+
+func TestRdkkCreateInputOrderCoversTheSeasonItWasGiven(t *testing.T) {
+	db, user := rdkkFixture(t)
+
+	nextSeason := Season{
+		Label: "MT I 2026/2027",
+		Start: agronomy.AddDays(projectionNow, 1),
+		End:   agronomy.AddDays(projectionNow, 210),
+	}
+
+	_, err := rdkkUseCase(t, db).CreateInputOrder(context.Background(), user, nextSeason)
+	if !errors.Is(err, ErrNothingToOrder) {
+		t.Fatalf("err = %v, want %v before anything is planted for that season", err, ErrNothingToOrder)
+	}
+
+	if err := db.Create(&entity.Block{
+		ID: "block-next-season", PlotID: "plot-home", Label: "BLOK R", AreaHa: 2, OrderIndex: 7,
+		CommodityID: maizeCommodity, VarietyID: "variety-1",
+		PlantingDate: agronomy.AddDays(projectionNow, 30),
+	}).Error; err != nil {
+		t.Fatalf("seeding a planned block: %v", err)
+	}
+
+	created, err := rdkkUseCase(t, db).CreateInputOrder(context.Background(), user, nextSeason)
+	if err != nil {
+		t.Fatalf("CreateInputOrder: %v", err)
+	}
+	if created.Lines != 2 {
+		t.Errorf("Lines = %d, want 2 (urea and sp36) for next season", created.Lines)
+	}
+
+	order := new(entity.InputOrder)
+	if err := db.Where("id = ?", created.OrderID).Take(order).Error; err != nil {
+		t.Fatalf("reading back the order: %v", err)
+	}
+	if order.SeasonLabel != nextSeason.Label {
+		t.Errorf("SeasonLabel = %q, want %q", order.SeasonLabel, nextSeason.Label)
 	}
 }
