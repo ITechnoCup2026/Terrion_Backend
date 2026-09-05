@@ -48,6 +48,7 @@ type Projection struct {
 	Blocks      []entity.Block
 	Projections []agronomy.BlockProjection
 	Windows     map[string]agronomy.HarvestWindow
+	Yield       agronomy.YieldModel
 }
 
 func (u *ProjectionUseCase) ProjectCooperative(
@@ -159,6 +160,7 @@ func (u *ProjectionUseCase) ProjectCooperative(
 		Blocks:      blocks,
 		Projections: projections,
 		Windows:     windows,
+		Yield:       model,
 	}, nil
 }
 
