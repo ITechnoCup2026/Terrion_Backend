@@ -79,6 +79,7 @@ type PlanningUseCase struct {
 	SupplyRequestRepository  *repository.SupplyRequestRepository
 	SeasonPlanRepository     *repository.SeasonPlanRepository
 	FertiliserRateRepository *repository.FertiliserRateRepository
+	PlanShareTokenRepository *repository.PlanShareTokenRepository
 	Projection               *ProjectionUseCase
 	Weather                  *WeatherUseCase
 	Catalog                  *CatalogUseCase
@@ -98,6 +99,7 @@ func NewPlanningUseCase(
 	supplyRequestRepository *repository.SupplyRequestRepository,
 	seasonPlanRepository *repository.SeasonPlanRepository,
 	fertiliserRateRepository *repository.FertiliserRateRepository,
+	planShareTokenRepository *repository.PlanShareTokenRepository,
 	projection *ProjectionUseCase, weatherUseCase *WeatherUseCase,
 	catalog *CatalogUseCase, ai *aiclient.Client, cache *redis.Client,
 ) *PlanningUseCase {
@@ -115,6 +117,7 @@ func NewPlanningUseCase(
 		SupplyRequestRepository:  supplyRequestRepository,
 		SeasonPlanRepository:     seasonPlanRepository,
 		FertiliserRateRepository: fertiliserRateRepository,
+		PlanShareTokenRepository: planShareTokenRepository,
 		Projection:               projection,
 		Weather:                  weatherUseCase,
 		Catalog:                  catalog,
@@ -728,6 +731,8 @@ func (u *PlanningUseCase) persistPlan(
 
 	blocks := make([]entity.Block, 0, len(assignments))
 	items := make([]entity.SeasonPlanItem, 0, len(assignments))
+	tokens := make([]entity.PlanShareToken, 0, len(assignments))
+	seenMember := map[string]bool{}
 	for _, assignment := range assignments {
 		order := nextIndex[assignment.PlotID]
 		nextIndex[assignment.PlotID] = order + 1
@@ -762,6 +767,15 @@ func (u *PlanningUseCase) persistPlan(
 			Plausibility:         string(assignment.Plausibility),
 			BlockID:              &blockID,
 		})
+
+		if !seenMember[assignment.MemberID] {
+			seenMember[assignment.MemberID] = true
+			tokens = append(tokens, entity.PlanShareToken{
+				ID:       uuid.NewString(),
+				PlanID:   plan.ID,
+				MemberID: assignment.MemberID,
+			})
+		}
 	}
 
 	if len(blocks) > 0 {
@@ -770,6 +784,9 @@ func (u *PlanningUseCase) persistPlan(
 		}
 		if err := tx.Create(&items).Error; err != nil {
 			return fmt.Errorf("creating plan items of %s: %w", plan.ID, err)
+		}
+		if err := tx.Create(&tokens).Error; err != nil {
+			return fmt.Errorf("creating share tokens of %s: %w", plan.ID, err)
 		}
 	}
 
@@ -867,6 +884,139 @@ type StoredPlan struct {
 	PlotNames      map[string]string
 	CommodityNames map[string]string
 	VarietyNames   map[string]string
+	ShareTokens    []entity.PlanShareToken
+}
+
+var ErrPlanShareNotFound = errors.New("plan share not found")
+
+type MemberPlanShareItem struct {
+	PlotName      string
+	CommodityName string
+	VarietyName   string
+	PlantingDate  time.Time
+	HarvestStart  time.Time
+	HarvestEnd    time.Time
+	AreaHa        float64
+	TonnesLow     float64
+	TonnesMid     float64
+	TonnesHigh    float64
+	Plausibility  string
+}
+
+type MemberSubsidyCap struct {
+	PlantedHa float64
+	ExcessHa  float64
+}
+
+type MemberPlanShare struct {
+	MemberName      string
+	CooperativeName string
+	SeasonLabel     string
+	PlanStatus      string
+	Items           []MemberPlanShareItem
+	Fertiliser      []rdkk.RequirementLine
+	OverSubsidyCap  *MemberSubsidyCap
+}
+
+func (u *PlanningUseCase) ViewShare(
+	ctx context.Context, token string, now time.Time,
+) (MemberPlanShare, error) {
+	db := u.DB.WithContext(ctx)
+
+	share := new(entity.PlanShareToken)
+	if err := u.PlanShareTokenRepository.FindById(db, share, token); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return MemberPlanShare{}, ErrPlanShareNotFound
+		}
+		return MemberPlanShare{}, fmt.Errorf("reading plan share token %s: %w", token, err)
+	}
+
+	plan := new(entity.SeasonPlan)
+	if err := u.SeasonPlanRepository.FindById(db, plan, share.PlanID); err != nil {
+		return MemberPlanShare{}, fmt.Errorf("reading plan %s: %w", share.PlanID, err)
+	}
+
+	cooperative := new(entity.Cooperative)
+	if err := u.CooperativeRepository.FindById(db, cooperative, plan.CooperativeID); err != nil {
+		return MemberPlanShare{}, fmt.Errorf("reading cooperative %s: %w", plan.CooperativeID, err)
+	}
+
+	member := new(entity.Member)
+	if err := u.MemberRepository.FindById(db, member, share.MemberID); err != nil {
+		return MemberPlanShare{}, fmt.Errorf("reading member %s: %w", share.MemberID, err)
+	}
+
+	items, err := u.SeasonPlanRepository.FindItemsByPlanID(db, plan.ID)
+	if err != nil {
+		return MemberPlanShare{}, fmt.Errorf("reading items of plan %s: %w", plan.ID, err)
+	}
+
+	commodityNames, varietyNames, err := u.catalogueNames(db, items)
+	if err != nil {
+		return MemberPlanShare{}, err
+	}
+	plotNames, err := u.plotNames(db, plan.CooperativeID)
+	if err != nil {
+		return MemberPlanShare{}, err
+	}
+
+	memberItems := []MemberPlanShareItem{}
+	planted := []rdkk.PlantedBlock{}
+	for _, item := range items {
+		if item.MemberID != share.MemberID {
+			continue
+		}
+		memberItems = append(memberItems, MemberPlanShareItem{
+			PlotName:      plotNames[item.PlotID],
+			CommodityName: commodityNames[item.CommodityID],
+			VarietyName:   varietyNames[item.VarietyID],
+			PlantingDate:  item.PlantingDate,
+			HarvestStart:  item.ExpectedHarvestStart,
+			HarvestEnd:    item.ExpectedHarvestEnd,
+			AreaHa:        item.AreaHa,
+			TonnesLow:     item.ExpectedTonnesLow,
+			TonnesMid:     item.ExpectedTonnesMid,
+			TonnesHigh:    item.ExpectedTonnesHigh,
+			Plausibility:  item.Plausibility,
+		})
+		planted = append(planted, rdkk.PlantedBlock{
+			BlockID:     item.ID,
+			MemberID:    item.MemberID,
+			MemberName:  member.Name,
+			CommodityID: item.CommodityID,
+			AreaHa:      item.AreaHa,
+		})
+	}
+
+	rates, err := u.fertiliserRates(ctx)
+	if err != nil {
+		return MemberPlanShare{}, err
+	}
+	aggregate := rdkk.AggregateInputs(planted, rates)
+
+	result := MemberPlanShare{
+		MemberName:      member.Name,
+		CooperativeName: cooperative.Name,
+		SeasonLabel:     plan.SeasonLabel,
+		PlanStatus:      string(plan.Status),
+		Items:           memberItems,
+		Fertiliser:      []rdkk.RequirementLine{},
+	}
+	if len(aggregate.Members) > 0 {
+		result.Fertiliser = aggregate.Members[0].Lines
+		if aggregate.Members[0].OverSubsidyCap {
+			result.OverSubsidyCap = &MemberSubsidyCap{
+				PlantedHa: aggregate.Members[0].PlantedHa,
+				ExcessHa:  aggregate.Members[0].ExcessHa,
+			}
+		}
+	}
+
+	if err := u.PlanShareTokenRepository.MarkViewed(db, token, now); err != nil {
+		return MemberPlanShare{}, fmt.Errorf("marking plan share %s viewed: %w", token, err)
+	}
+
+	return result, nil
 }
 
 func (u *PlanningUseCase) List(
@@ -920,6 +1070,11 @@ func (u *PlanningUseCase) Get(
 		return StoredPlan{}, err
 	}
 
+	shareTokens, err := u.PlanShareTokenRepository.FindByPlanID(db, plan.ID)
+	if err != nil {
+		return StoredPlan{}, fmt.Errorf("reading share tokens of plan %s: %w", plan.ID, err)
+	}
+
 	return StoredPlan{
 		Plan:           *plan,
 		Items:          items,
@@ -927,6 +1082,7 @@ func (u *PlanningUseCase) Get(
 		PlotNames:      plotNames,
 		CommodityNames: commodityNames,
 		VarietyNames:   varietyNames,
+		ShareTokens:    shareTokens,
 	}, nil
 }
 

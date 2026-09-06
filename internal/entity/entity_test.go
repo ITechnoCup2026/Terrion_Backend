@@ -27,7 +27,7 @@ func TestEntitiesMatchMigrations(t *testing.T) {
 		&entity.WeatherDaily{}, &entity.WeatherNormal{},
 		&entity.CooperativeCapacity{}, &entity.Calibration{},
 		&entity.SupplyContractRequest{}, &entity.InputOrder{}, &entity.InputOrderLine{},
-		&entity.SeasonPlan{}, &entity.SeasonPlanItem{},
+		&entity.SeasonPlan{}, &entity.SeasonPlanItem{}, &entity.PlanShareToken{},
 	}
 
 	for _, model := range models {

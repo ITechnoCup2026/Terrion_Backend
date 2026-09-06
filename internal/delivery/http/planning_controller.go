@@ -126,6 +126,21 @@ func (c *PlanningController) List(ctx *fiber.Ctx) error {
 	})
 }
 
+func (c *PlanningController) ViewShare(ctx *fiber.Ctx) error {
+	share, err := c.UseCase.ViewShare(ctx.UserContext(), ctx.Params("token"), time.Now())
+	if err != nil {
+		if errors.Is(err, usecase.ErrPlanShareNotFound) {
+			return fiber.NewError(fiber.StatusNotFound, "plan share not found")
+		}
+		c.Log.Errorf("reading a plan share: %v", err)
+		return fiber.NewError(fiber.StatusInternalServerError, "request failed")
+	}
+
+	return ctx.JSON(model.WebResponse[*model.MemberPlanShareResponse]{
+		Data: converter.MemberPlanShareToResponse(share),
+	})
+}
+
 func (c *PlanningController) failure(ctx *fiber.Ctx, action string, err error) error {
 	var refusal *usecase.PlanRefusal
 	if errors.As(err, &refusal) {

@@ -142,16 +142,25 @@ type SeasonPlanItemResponse struct {
 	BlockID       *string `json:"block_id"`
 }
 
+type MemberShareResponse struct {
+	MemberID      string  `json:"member_id"`
+	MemberName    string  `json:"member_name"`
+	ShareToken    string  `json:"share_token"`
+	Viewed        bool    `json:"viewed"`
+	FirstViewedAt *string `json:"first_viewed_at"`
+}
+
 type SeasonPlanResponse struct {
-	ID          string                   `json:"id"`
-	SeasonLabel string                   `json:"season_label"`
-	SeasonStart string                   `json:"season_start"`
-	SeasonEnd   string                   `json:"season_end"`
-	Objective   string                   `json:"objective"`
-	Status      string                   `json:"status"`
-	CreatedAt   string                   `json:"created_at"`
-	CancelledAt *string                  `json:"cancelled_at"`
-	Items       []SeasonPlanItemResponse `json:"items"`
+	ID           string                   `json:"id"`
+	SeasonLabel  string                   `json:"season_label"`
+	SeasonStart  string                   `json:"season_start"`
+	SeasonEnd    string                   `json:"season_end"`
+	Objective    string                   `json:"objective"`
+	Status       string                   `json:"status"`
+	CreatedAt    string                   `json:"created_at"`
+	CancelledAt  *string                  `json:"cancelled_at"`
+	Items        []SeasonPlanItemResponse `json:"items"`
+	MemberShares []MemberShareResponse    `json:"member_shares"`
 }
 
 type SeasonPlanListResponse struct {
@@ -166,4 +175,33 @@ type ApplySeasonPlanResponse struct {
 type CancelSeasonPlanResponse struct {
 	PlanID        string `json:"plan_id"`
 	BlocksRemoved int    `json:"blocks_removed"`
+}
+
+type MemberPlanShareItemResponse struct {
+	PlotName      string  `json:"plot_name"`
+	CommodityName string  `json:"commodity_name"`
+	VarietyName   string  `json:"variety_name"`
+	PlantingDate  string  `json:"planting_date"`
+	HarvestStart  string  `json:"harvest_start"`
+	HarvestEnd    string  `json:"harvest_end"`
+	AreaHa        float64 `json:"area_ha"`
+	TonnesLow     float64 `json:"tonnes_low"`
+	TonnesMid     float64 `json:"tonnes_mid"`
+	TonnesHigh    float64 `json:"tonnes_high"`
+	Plausibility  string  `json:"plausibility"`
+}
+
+type MemberShareSubsidyCapResponse struct {
+	PlantedHa float64 `json:"planted_ha"`
+	ExcessHa  float64 `json:"excess_ha"`
+}
+
+type MemberPlanShareResponse struct {
+	MemberName      string                         `json:"member_name"`
+	CooperativeName string                         `json:"cooperative_name"`
+	SeasonLabel     string                         `json:"season_label"`
+	PlanStatus      string                         `json:"plan_status"`
+	Items           []MemberPlanShareItemResponse  `json:"items"`
+	Fertiliser      []FertiliserLineResponse       `json:"fertiliser"`
+	OverSubsidyCap  *MemberShareSubsidyCapResponse `json:"over_subsidy_cap"`
 }

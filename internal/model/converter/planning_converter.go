@@ -124,6 +124,75 @@ func StoredPlanToResponse(stored usecase.StoredPlan) *model.SeasonPlanResponse {
 			BlockID:       item.BlockID,
 		}
 	}
+
+	response.MemberShares = memberSharesToResponse(stored.Items, stored.MemberNames, stored.ShareTokens)
+	return response
+}
+
+func memberSharesToResponse(
+	items []entity.SeasonPlanItem, memberNames map[string]string, tokens []entity.PlanShareToken,
+) []model.MemberShareResponse {
+	tokenByMember := make(map[string]entity.PlanShareToken, len(tokens))
+	for _, token := range tokens {
+		tokenByMember[token.MemberID] = token
+	}
+
+	shares := []model.MemberShareResponse{}
+	seen := map[string]bool{}
+	for _, item := range items {
+		if seen[item.MemberID] {
+			continue
+		}
+		seen[item.MemberID] = true
+
+		token := tokenByMember[item.MemberID]
+		share := model.MemberShareResponse{
+			MemberID:   item.MemberID,
+			MemberName: memberNames[item.MemberID],
+			ShareToken: token.ID,
+			Viewed:     token.FirstViewedAt != nil,
+		}
+		if token.FirstViewedAt != nil {
+			firstViewed := token.FirstViewedAt.UTC().Format(time.RFC3339)
+			share.FirstViewedAt = &firstViewed
+		}
+		shares = append(shares, share)
+	}
+	return shares
+}
+
+func MemberPlanShareToResponse(share usecase.MemberPlanShare) *model.MemberPlanShareResponse {
+	response := &model.MemberPlanShareResponse{
+		MemberName:      share.MemberName,
+		CooperativeName: share.CooperativeName,
+		SeasonLabel:     share.SeasonLabel,
+		PlanStatus:      share.PlanStatus,
+		Items:           make([]model.MemberPlanShareItemResponse, len(share.Items)),
+		Fertiliser:      fertiliserToResponse(share.Fertiliser),
+	}
+
+	for i, item := range share.Items {
+		response.Items[i] = model.MemberPlanShareItemResponse{
+			PlotName:      item.PlotName,
+			CommodityName: item.CommodityName,
+			VarietyName:   item.VarietyName,
+			PlantingDate:  agronomy.ToISODate(item.PlantingDate),
+			HarvestStart:  agronomy.ToISODate(item.HarvestStart),
+			HarvestEnd:    agronomy.ToISODate(item.HarvestEnd),
+			AreaHa:        item.AreaHa,
+			TonnesLow:     item.TonnesLow,
+			TonnesMid:     item.TonnesMid,
+			TonnesHigh:    item.TonnesHigh,
+			Plausibility:  item.Plausibility,
+		}
+	}
+
+	if share.OverSubsidyCap != nil {
+		response.OverSubsidyCap = &model.MemberShareSubsidyCapResponse{
+			PlantedHa: share.OverSubsidyCap.PlantedHa,
+			ExcessHa:  share.OverSubsidyCap.ExcessHa,
+		}
+	}
 	return response
 }
 

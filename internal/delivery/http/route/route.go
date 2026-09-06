@@ -42,6 +42,7 @@ func (c *RouteConfig) setupPublicRoutes() {
 	c.App.Get("/api/catalog", c.CatalogController.Get)
 	c.App.Get("/api/catalog/cooperatives/:id", c.CatalogController.GetForCooperative)
 	c.App.Get("/api/public/plots/:publicId", c.PublicController.GetPlot)
+	c.App.Get("/api/public/plan-share/:token", c.PlanningController.ViewShare)
 	c.App.Get("/api/atlas/cooperatives", c.PublicController.Cooperatives)
 	c.App.Get("/api/atlas/farms/:id", c.PublicController.Farm)
 }

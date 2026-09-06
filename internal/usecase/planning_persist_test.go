@@ -130,6 +130,38 @@ func TestPersistPlanNumbersBlocksSequentiallyOnTheSamePlot(t *testing.T) {
 	}
 }
 
+func TestPersistPlanCreatesOneShareTokenPerDistinctMember(t *testing.T) {
+	db := seedPlanningFixture(t)
+	user := planningManager(t, db)
+	useCase := planningUseCase(t, db)
+
+	plan := &entity.SeasonPlan{
+		ID:            "plan-shared",
+		CooperativeID: homeCoop,
+		SeasonLabel:   planSeason,
+		SeasonStart:   planningNow,
+		SeasonEnd:     agronomy.AddDays(planningNow, 180),
+		Objective:     constants.ObjectiveSafe,
+		Status:        constants.PlanApplied,
+		CreatedBy:     user.ID,
+		CreatedAt:     planningNow,
+	}
+	if err := useCase.persistPlan(context.Background(), plan, planAssignments(3)); err != nil {
+		t.Fatalf("persistPlan: %v", err)
+	}
+
+	tokens, err := useCase.PlanShareTokenRepository.FindByPlanID(db, plan.ID)
+	if err != nil {
+		t.Fatalf("FindByPlanID: %v", err)
+	}
+	if len(tokens) != 1 {
+		t.Fatalf("len(tokens) = %d, want 1 (all 3 assignments share member-plot-1)", len(tokens))
+	}
+	if tokens[0].MemberID != "member-plot-1" {
+		t.Errorf("token MemberID = %q, want %q", tokens[0].MemberID, "member-plot-1")
+	}
+}
+
 func TestNormalsForReadsEveryCellInOneStatement(t *testing.T) {
 	db := seedPlanningFixture(t)
 	awayCell := weather.GridCell{GridLat: -6.25, GridLng: 106.75}
