@@ -45,3 +45,28 @@ const (
 )
 
 const MemberWithoutName = "Anggota tanpa nama"
+
+// Kapasitas gudang koperasi.
+const (
+	// CapacityCommodityUnknown: baris menyebut komoditas yang tidak ada di
+	// tabel acuan. Ditolak seluruhnya, karena kapasitas yang tersimpan pada id
+	// yang salah ketik adalah ambang yang pengurus kira sudah ia atur.
+	CapacityCommodityUnknown = "capacity_commodity_unknown"
+)
+
+// Menyunting dan menghapus apa yang sudah terdaftar.
+const (
+	// EditBlockAlreadyGone: blok tidak ada, atau bukan milik koperasi ini.
+	// Sengaja tidak membedakan keduanya -- keberadaan lahan koperasi lain pun
+	// bukan sesuatu yang perlu dibocorkan.
+	EditBlockAlreadyGone = "edit_block_already_gone"
+	// EditBlockHarvested: bloknya sudah punya catatan panen. Panen itu sudah
+	// masuk ke kalibrasi model hasil koperasi, jadi menyunting bloknya membuat
+	// catatan panen menggambarkan sesuatu yang tidak pernah ditanam.
+	EditBlockHarvested = "edit_block_harvested"
+	// DeletePlotAlreadyGone: lahan tidak ada, atau bukan milik koperasi ini.
+	DeletePlotAlreadyGone = "delete_plot_already_gone"
+	// DeletePlotHarvested: salah satu bloknya sudah dipanen. Menghapusnya
+	// mengubah setiap proyeksi berikutnya tanpa ada yang bisa menjelaskannya.
+	DeletePlotHarvested = "delete_plot_harvested"
+)

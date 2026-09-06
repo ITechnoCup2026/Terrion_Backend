@@ -1,0 +1,16 @@
+-- Nomor telepon pembeli, supaya koperasi bisa menghubunginya.
+--
+-- Terrion tidak punya pesan di dalam aplikasi dan tidak berniat punya: yang
+-- benar-benar dipakai di lapangan adalah WhatsApp. Yang bisa diberikan sistem
+-- ini adalah pertemuannya -- siapa punya apa, kapan panennya -- lalu menyerahkan
+-- percakapannya ke saluran yang sudah ada di telepon semua orang.
+--
+-- `member` sudah punya kolom yang sama sejak 20260906000012. Ini sisi
+-- seberangnya: tanpa nomor pembeli, tautan WhatsApp hanya bisa berjalan satu
+-- arah, dan koperasi yang menerima permintaan tidak punya cara membalasnya.
+--
+-- Nullable, dan tetap nullable. Akun yang dibuat sebelum kolom ini ada tidak
+-- punya nomor, dan memaksanya berarti mengunci mereka keluar dari akunnya
+-- sendiri. Layar menangani ketiadaannya (pemilih kontak WhatsApp), jadi
+-- ketiadaan itu bukan keadaan rusak.
+alter table app_user add column phone text;

@@ -66,12 +66,33 @@ func SeasonByLabel(label string, now time.Time) (Season, bool) {
 	return Season{}, false
 }
 
+// PlantingDateStepDays adalah jarak antar tanggal tanam yang ditawarkan
+// perencana.
+//
+// Setiap tanggal dikalikan jumlah lahan dan jumlah varietas, jadi angka ini
+// menentukan besar ruang pencarian secara langsung. Ia dinaikkan dari 7 ke 14
+// ketika varietas acuan bertambah dari 13 menjadi 42: pada langkah mingguan
+// satu koperasi berisi 14 lahan menghasilkan ~7.600 kombinasi, melewati batas
+// 2.000 yang diterima layanan AI dan memberi solver lokal pekerjaan yang jauh
+// lebih berat tanpa rencana yang lebih baik.
+//
+// Dua minggu juga lebih jujur terhadap cara orang menanam. Selisih tujuh hari
+// pada tanggal tanam yang direncanakan tiga bulan di muka adalah presisi yang
+// tidak bisa dipegang siapa pun begitu hujan datang terlambat.
+const PlantingDateStepDays = 14
+
+// CandidatePlantingDates menyusun tanggal tanam yang boleh ditawarkan untuk
+// satu musim: mulai dari hari Senin pertama yang masih di depan, lalu
+// melangkah PlantingDateStepDays sampai jendela tanam musim itu tutup.
 func CandidatePlantingDates(season Season, now time.Time) []time.Time {
 	earliest := agronomy.AddDays(agronomy.StartOfDay(now), 1)
 	if season.PlantingFrom.After(earliest) {
 		earliest = season.PlantingFrom
 	}
 
+	// Penyelarasan ke hari Senin, sekali di awal. Ini bukan langkahnya:
+	// tanggal pertama harus jatuh pada awal minggu ISO, dan sesudah itu barulah
+	// PlantingDateStepDays berlaku.
 	cursor := agronomy.ISOWeekStart(earliest)
 	if cursor.Before(earliest) {
 		cursor = agronomy.AddDays(cursor, 7)
@@ -80,7 +101,7 @@ func CandidatePlantingDates(season Season, now time.Time) []time.Time {
 	dates := []time.Time{}
 	for !cursor.After(season.PlantingTo) {
 		dates = append(dates, cursor)
-		cursor = agronomy.AddDays(cursor, 7)
+		cursor = agronomy.AddDays(cursor, PlantingDateStepDays)
 	}
 	return dates
 }

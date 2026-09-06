@@ -66,7 +66,9 @@ type cooperativeSpec struct {
 	lng      float64
 	// The pengurus who gets an account for this cooperative. Seeded members
 	// are not accounts; this person is both.
-	manager  string
+	manager string
+	// phone adalah kontak koperasi yang dipakai pembeli untuk membalas.
+	phone    string
 	capacity map[string]float64
 	plots    []plotSpec
 }
@@ -271,6 +273,7 @@ func subang() cooperativeSpec {
 		lat:      -6.4200,
 		lng:      107.6800,
 		manager:  "Bu Sri Wahyuni",
+		phone:    "081300000001",
 		capacity: map[string]float64{"padi": 18, "jagung": 12},
 		plots: []plotSpec{
 			{
@@ -403,6 +406,7 @@ func brebes() cooperativeSpec {
 		lat:      -7.2000,
 		lng:      108.9800,
 		manager:  "Pak Joko Purnomo",
+		phone:    "081300000002",
 		capacity: map[string]float64{},
 		plots: []plotSpec{
 			{
@@ -466,6 +470,7 @@ func garut() cooperativeSpec {
 		lat:      -7.3700,
 		lng:      107.8000,
 		manager:  "Pak Endang Suherman",
+		phone:    "081300000003",
 		capacity: map[string]float64{"kentang": 7},
 		plots: []plotSpec{
 			{
@@ -523,6 +528,7 @@ func wonosobo() cooperativeSpec {
 		lat:      -7.2100,
 		lng:      109.9100,
 		manager:  "Bu Tri Astuti",
+		phone:    "081300000004",
 		capacity: map[string]float64{"kentang": 6},
 		plots: []plotSpec{
 			{
@@ -581,6 +587,7 @@ func malang() cooperativeSpec {
 		lat:      -8.0079,
 		lng:      112.7550,
 		manager:  "Pak Hariyanto",
+		phone:    "081300000005",
 		capacity: map[string]float64{"jagung": 10},
 		plots: []plotSpec{
 			{
@@ -644,6 +651,7 @@ func karo() cooperativeSpec {
 		lat:      3.1900,
 		lng:      98.5100,
 		manager:  "Pak Jhon Sitepu",
+		phone:    "081300000006",
 		capacity: map[string]float64{"kentang": 8},
 		plots: []plotSpec{
 			{
@@ -709,6 +717,7 @@ func banyuasin() cooperativeSpec {
 		lat:      -2.6300,
 		lng:      104.6200,
 		manager:  "Pak Ahmad Fauzi",
+		phone:    "081300000007",
 		capacity: map[string]float64{"padi": 20},
 		plots: []plotSpec{
 			{
@@ -761,6 +770,7 @@ func lampung() cooperativeSpec {
 		lat:      -4.8200,
 		lng:      105.2200,
 		manager:  "Pak Sugiyono",
+		phone:    "081300000008",
 		capacity: map[string]float64{"jagung": 14},
 		plots: []plotSpec{
 			{
@@ -817,6 +827,7 @@ func sidrap() cooperativeSpec {
 		lat:      -3.8500,
 		lng:      119.8000,
 		manager:  "Pak Andi Baso",
+		phone:    "081300000009",
 		capacity: map[string]float64{"padi": 22},
 		plots: []plotSpec{
 			{
@@ -869,6 +880,7 @@ func tabanan() cooperativeSpec {
 		lat:      -8.4700,
 		lng:      115.1000,
 		manager:  "Pak I Wayan Sudira",
+		phone:    "081300000010",
 		capacity: map[string]float64{"padi": 9},
 		plots: []plotSpec{
 			{
@@ -920,6 +932,7 @@ func lombok() cooperativeSpec {
 		lat:      -8.7000,
 		lng:      116.2700,
 		manager:  "Pak Lalu Ahmad",
+		phone:    "081300000011",
 		capacity: map[string]float64{"padi": 11, "jagung": 8},
 		plots: []plotSpec{
 			{
@@ -971,6 +984,7 @@ func barito() cooperativeSpec {
 		lat:      -3.2600,
 		lng:      114.5700,
 		manager:  "Pak Rusdiansyah",
+		phone:    "081300000012",
 		capacity: map[string]float64{"padi": 12},
 		plots: []plotSpec{
 			{
@@ -1070,6 +1084,10 @@ func plant(db *gorm.DB, spec cooperativeSpec, now time.Time) (*seededCooperative
 		Lng:            spec.lng,
 		StaggerApplied: json.RawMessage("[]"),
 		CreatedAt:      agronomy.AddDays(now, -420),
+	}
+	if spec.phone != "" {
+		phone := spec.phone
+		cooperative.Phone = &phone
 	}
 	if err := tx.Create(cooperative).Error; err != nil {
 		return nil, fmt.Errorf("creating the cooperative: %w", err)
@@ -1196,7 +1214,7 @@ func register(
 	ctx context.Context, db *gorm.DB, goTrue *supabase.Client,
 	accounts []accountSpec, seeded []*seededCooperative, password string,
 ) error {
-	for _, account := range accounts {
+	for index, account := range accounts {
 		userID, err := goTrue.CreateUser(ctx, account.email, password)
 		if err != nil {
 			return fmt.Errorf(
@@ -1217,6 +1235,11 @@ func register(
 			organisation := account.organisation
 			profile.Organisation = &organisation
 		}
+		// Nomor contoh, supaya tautan WhatsApp di layar Permintaan punya
+		// sesuatu untuk dibuka saat diuji. Nomor uji Indonesia, bukan nomor
+		// siapa pun: 0812-0000-00NN.
+		phone := fmt.Sprintf("0812000000%02d", index+1)
+		profile.Phone = &phone
 
 		if err := db.Create(profile).Error; err != nil {
 			if deleteErr := goTrue.DeleteUser(ctx, userID); deleteErr != nil {

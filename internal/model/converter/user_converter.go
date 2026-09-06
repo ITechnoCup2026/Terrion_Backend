@@ -12,5 +12,6 @@ func UserToResponse(user *entity.AppUser) *model.UserResponse {
 		CooperativeID: user.CooperativeID,
 		FullName:      user.FullName,
 		Organisation:  user.Organisation,
+		Phone:         user.Phone,
 	}
 }

@@ -177,3 +177,40 @@ type CommodityResponse struct {
 	SpriteRow int               `json:"sprite_row"`
 	Varieties []VarietyResponse `json:"varieties"`
 }
+
+// UpdateBlockRequest menyunting satu blok yang sedang berdiri.
+//
+// Setiap field opsional kecuali AreaHa: formulir di layar terisi penuh dari
+// keadaan sekarang, jadi yang dikirim balik adalah keadaan yang diinginkan
+// seluruhnya, bukan tambalan sebagian.
+type UpdateBlockRequest struct {
+	AreaHa       float64 `json:"area_ha" validate:"required,gt=0,max=1000"`
+	CommodityID  string  `json:"commodity_id" validate:"omitempty,uuid"`
+	VarietyID    string  `json:"variety_id" validate:"omitempty,uuid"`
+	PlantingDate string  `json:"planting_date" validate:"omitempty,datetime=2006-01-02"`
+}
+
+// HarvestRecordResponse adalah satu panen yang benar-benar tercatat.
+//
+// Tidak ada rentang dan tidak ada `basis` di sini, tidak seperti jendela panen:
+// ini bukan perkiraan, melainkan angka yang diketik seseorang yang berdiri di
+// lahan itu.
+type HarvestRecordResponse struct {
+	BlockID       string   `json:"block_id"`
+	BlockLabel    string   `json:"block_label"`
+	PlotID        string   `json:"plot_id"`
+	PlotName      string   `json:"plot_name"`
+	MemberName    string   `json:"member_name"`
+	CommodityName string   `json:"commodity_name"`
+	VarietyName   string   `json:"variety_name"`
+	AreaHa        float64  `json:"area_ha"`
+	PlantingDate  string   `json:"planting_date"`
+	HarvestDate   string   `json:"harvest_date"`
+	ActualYieldKg float64  `json:"actual_yield_kg"`
+	PricePerKg    *float64 `json:"price_per_kg"`
+	PaymentDate   *string  `json:"payment_date"`
+}
+
+type HarvestHistoryResponse struct {
+	Records []HarvestRecordResponse `json:"records"`
+}

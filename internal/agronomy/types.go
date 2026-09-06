@@ -66,4 +66,12 @@ type BlockProjection struct {
 	CommodityID    string
 	Window         DateRange
 	ExpectedTonnes float64
+	// Shiftable menandai blok yang tanggal tanamnya masih di depan, jadi
+	// menggesernya masih berupa rencana dan bukan pemalsuan catatan.
+	//
+	// Diisi oleh pemanggil, yang memegang `now` dan tanggal tanamnya; deteksi
+	// tabrakan sendiri tidak tahu hari ini tanggal berapa. Nilai nol `false`
+	// adalah bawaan yang aman: sesuatu yang belum dinyatakan boleh digeser
+	// tidak akan pernah diusulkan untuk digeser.
+	Shiftable bool
 }

@@ -12,6 +12,7 @@ import (
 	"terrion-backend/internal/catalog"
 	"terrion-backend/internal/constants"
 	"terrion-backend/internal/delivery/http/middleware"
+	"terrion-backend/internal/entity"
 	"terrion-backend/internal/model"
 	"terrion-backend/internal/model/converter"
 	"terrion-backend/internal/usecase"
@@ -76,8 +77,14 @@ func (c *CatalogController) ListRequests(ctx *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to list requests")
 	}
 
+	contacts, err := c.SupplyRequest.Contacts(ctx.UserContext(), requests)
+	if err != nil {
+		c.Log.Errorf("reading supply request contacts: %v", err)
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to list requests")
+	}
+
 	return ctx.JSON(model.WebResponse[[]model.SupplyRequestResponse]{
-		Data: converter.SupplyRequestsToResponse(requests),
+		Data: converter.SupplyRequestsToResponse(requests, contacts),
 	})
 }
 
@@ -97,8 +104,15 @@ func (c *CatalogController) CreateRequest(ctx *fiber.Ctx) error {
 		return c.requestFailure(err, "creating supply request")
 	}
 
+	contacts, err := c.SupplyRequest.Contacts(
+		ctx.UserContext(), []entity.SupplyContractRequest{*stored})
+	if err != nil {
+		c.Log.Errorf("reading supply request contacts: %v", err)
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to create request")
+	}
+
 	return ctx.Status(fiber.StatusCreated).JSON(model.WebResponse[*model.SupplyRequestResponse]{
-		Data: converter.SupplyRequestToResponse(stored),
+		Data: converter.SupplyRequestToResponse(stored, contacts),
 	})
 }
 

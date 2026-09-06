@@ -156,6 +156,10 @@ func (u *ProjectionUseCase) ProjectCooperative(
 			CommodityID:    block.CommodityID,
 			Window:         agronomy.DateRange{Start: window.Start, End: window.End},
 			ExpectedTonnes: yieldPerHa * block.AreaHa,
+			// Tanam yang masih di depan boleh digeser; yang sudah di tanah
+			// tidak. Ini satu-satunya tempat yang memegang `now` dan tanggal
+			// tanam sekaligus, jadi di sinilah pertanyaan itu dijawab.
+			Shiftable: block.PlantingDate.After(now),
 		})
 	}
 

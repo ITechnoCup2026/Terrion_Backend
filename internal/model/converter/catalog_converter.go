@@ -46,7 +46,9 @@ func CatalogToResponse(built usecase.Catalog) *model.CatalogResponse {
 	}
 }
 
-func SupplyRequestToResponse(request *entity.SupplyContractRequest) *model.SupplyRequestResponse {
+func SupplyRequestToResponse(
+	request *entity.SupplyContractRequest, contacts model.RequestContacts,
+) *model.SupplyRequestResponse {
 	response := &model.SupplyRequestResponse{
 		ID:                request.ID,
 		CooperativeID:     request.CooperativeID,
@@ -60,6 +62,9 @@ func SupplyRequestToResponse(request *entity.SupplyContractRequest) *model.Suppl
 		Status:            string(request.Status),
 		Notes:             request.Notes,
 		CreatedAt:         request.CreatedAt.UTC().Format(time.RFC3339),
+		BuyerPhone:        contacts.BuyerPhone[request.BuyerID],
+		CooperativeName:   contacts.CooperativeName[request.CooperativeID],
+		CooperativePhone:  contacts.CooperativePhone[request.CooperativeID],
 	}
 
 	if request.RespondedAt != nil {
@@ -71,11 +76,11 @@ func SupplyRequestToResponse(request *entity.SupplyContractRequest) *model.Suppl
 }
 
 func SupplyRequestsToResponse(
-	requests []entity.SupplyContractRequest,
+	requests []entity.SupplyContractRequest, contacts model.RequestContacts,
 ) []model.SupplyRequestResponse {
 	responses := make([]model.SupplyRequestResponse, len(requests))
 	for i := range requests {
-		responses[i] = *SupplyRequestToResponse(&requests[i])
+		responses[i] = *SupplyRequestToResponse(&requests[i], contacts)
 	}
 	return responses
 }

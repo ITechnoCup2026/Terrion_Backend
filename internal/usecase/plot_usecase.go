@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -23,8 +24,11 @@ import (
 
 var (
 	ErrNoCooperative = errors.New("account is not linked to a cooperative")
-	ErrPlotNotFound  = errors.New("plot not found")
-	ErrAreaTooLarge  = errors.New("plantings exceed the maximum plot area")
+	// ErrCommodityUnknown: sebuah baris menyebut komoditas yang tidak ada di
+	// tabel acuan.
+	ErrCommodityUnknown = errors.New(constants.CapacityCommodityUnknown)
+	ErrPlotNotFound     = errors.New("plot not found")
+	ErrAreaTooLarge     = errors.New("plantings exceed the maximum plot area")
 )
 
 // Why a harvest could not be recorded. Sentinels rather than a refusal struct
@@ -666,4 +670,243 @@ func (u *PlotUseCase) namesOfVariety(db *gorm.DB, varietyID string) (string, str
 		return variety.Name, ""
 	}
 	return variety.Name, commodity.Name
+}
+
+// UpdateBlock menyunting satu blok yang sedang berdiri.
+//
+// Lahan berubah di dunia nyata: sepetak dijual, batasnya diukur ulang, varietas
+// yang benar-benar ditanam ternyata bukan yang tercatat. Sebelum ini satu-
+// satunya jalan adalah mendaftarkan lahan baru dan meninggalkan yang lama,
+// yang membuat proyeksi koperasi menghitung hektare yang sama dua kali.
+//
+// Blok yang sudah dipanen ditolak. Panennya sudah masuk ke kalibrasi model
+// hasil koperasi ini, dan menyunting bloknya sesudah itu membuat catatan panen
+// menggambarkan sesuatu yang tidak pernah ditanam.
+func (u *PlotUseCase) UpdateBlock(
+	ctx context.Context, user *entity.AppUser, blockID string,
+	request *model.UpdateBlockRequest,
+) error {
+	if err := u.Validate.Struct(request); err != nil {
+		return err
+	}
+	if user.CooperativeID == nil {
+		return ErrNoCooperative
+	}
+
+	db := u.DB.WithContext(ctx)
+
+	block, err := u.BlockRepository.FindInCooperative(db, blockID, *user.CooperativeID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return &plots.EditRefusal{Code: constants.EditBlockAlreadyGone}
+		}
+		return fmt.Errorf("reading block %s: %w", blockID, err)
+	}
+	if block.ActualHarvestDate != nil {
+		return &plots.EditRefusal{Code: constants.EditBlockHarvested}
+	}
+
+	changes := map[string]any{"area_ha": request.AreaHa}
+
+	// Varietas dan komoditas berjalan bersama: sebuah varietas milik satu
+	// komoditas, dan menyimpan pasangan yang tidak cocok membuat proyeksi
+	// memakai kurva GDD tanaman lain.
+	if request.VarietyID != "" {
+		variety := new(entity.Variety)
+		if err := u.VarietyRepository.FindById(db, variety, request.VarietyID); err != nil {
+			return &plots.EditRefusal{Code: constants.EditBlockAlreadyGone}
+		}
+		changes["variety_id"] = variety.ID
+		changes["commodity_id"] = variety.CommodityID
+	}
+
+	if request.PlantingDate != "" {
+		plantingDate, err := agronomy.UTCDate(request.PlantingDate)
+		if err != nil {
+			return err
+		}
+		changes["planting_date"] = plantingDate
+	}
+
+	if err := db.Model(&entity.Block{}).Where("id = ?", block.ID).
+		Updates(changes).Error; err != nil {
+		return fmt.Errorf("updating block %s: %w", block.ID, err)
+	}
+
+	return nil
+}
+
+// DeletePlot menghapus satu lahan beserta blok-bloknya.
+//
+// Untuk lahan yang salah didaftarkan, bukan untuk lahan yang berhenti digarap:
+// yang kedua adalah sejarah, dan sejarah tidak dihapus. Karena itu lahan yang
+// punya panen tercatat ditolak -- kalibrasi model koperasi berdiri di atas
+// panen itu, dan menghapusnya mengubah setiap proyeksi berikutnya tanpa ada
+// yang bisa menjelaskan kenapa.
+func (u *PlotUseCase) DeletePlot(
+	ctx context.Context, user *entity.AppUser, plotID string,
+) error {
+	if user.CooperativeID == nil {
+		return ErrNoCooperative
+	}
+
+	db := u.DB.WithContext(ctx)
+
+	plot := new(entity.Plot)
+	if err := db.Where("id = ? AND cooperative_id = ?", plotID, *user.CooperativeID).
+		Take(plot).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return &plots.EditRefusal{Code: constants.DeletePlotAlreadyGone}
+		}
+		return fmt.Errorf("reading plot %s: %w", plotID, err)
+	}
+
+	var harvested int64
+	if err := db.Model(&entity.Block{}).
+		Where("plot_id = ? AND actual_harvest_date IS NOT NULL", plot.ID).
+		Count(&harvested).Error; err != nil {
+		return fmt.Errorf("counting harvests of plot %s: %w", plot.ID, err)
+	}
+	if harvested > 0 {
+		return &plots.EditRefusal{Code: constants.DeletePlotHarvested}
+	}
+
+	tx := db.Begin()
+	defer tx.Rollback()
+
+	if err := tx.Where("plot_id = ?", plot.ID).Delete(&entity.Block{}).Error; err != nil {
+		return fmt.Errorf("deleting blocks of plot %s: %w", plot.ID, err)
+	}
+	if err := tx.Where("id = ?", plot.ID).Delete(&entity.Plot{}).Error; err != nil {
+		return fmt.Errorf("deleting plot %s: %w", plot.ID, err)
+	}
+
+	return tx.Commit().Error
+}
+
+// HarvestRecord adalah satu panen yang benar-benar tercatat.
+//
+// Bukan proyeksi: setiap angka di sini diketik seseorang yang berdiri di lahan
+// itu. Karena itu tidak ada rentang dan tidak ada dasar cuaca -- yang ada
+// hanya apa yang terjadi.
+type HarvestRecord struct {
+	BlockID       string
+	BlockLabel    string
+	PlotID        string
+	PlotName      string
+	MemberName    string
+	CommodityName string
+	VarietyName   string
+	AreaHa        float64
+	PlantingDate  time.Time
+	HarvestDate   time.Time
+	ActualYieldKg float64
+	// Null ketika panen dicatat tanpa harga, yang lazim: harganya sering baru
+	// diketahui setelah tengkulak menimbang.
+	PricePerKg  *float64
+	PaymentDate *time.Time
+}
+
+// HarvestHistory mengembalikan setiap panen yang pernah dicatat koperasi ini,
+// terbaru dulu.
+//
+// Mencatat panen menutup bloknya dan mengeluarkannya dari kanvas, karena tidak
+// ada lagi yang tumbuh di sana. Sebelum ini itu juga berarti catatannya lenyap
+// dari layar sama sekali: kader yang baru mengetik 7.400 kg kehilangan satu-
+// satunya bukti bahwa ia pernah mengetiknya, dan kalibrasi yang lahir dari
+// angka itu tidak bisa diperiksa siapa pun.
+func (u *PlotUseCase) HarvestHistory(
+	ctx context.Context, user *entity.AppUser,
+) ([]HarvestRecord, error) {
+	if user.CooperativeID == nil {
+		return nil, ErrNoCooperative
+	}
+
+	db := u.DB.WithContext(ctx)
+
+	plotRows, err := u.PlotRepository.FindByCooperativeID(db, *user.CooperativeID)
+	if err != nil {
+		return nil, fmt.Errorf("reading plots of cooperative %s: %w", *user.CooperativeID, err)
+	}
+	if len(plotRows) == 0 {
+		return []HarvestRecord{}, nil
+	}
+
+	plotIDs := make([]string, len(plotRows))
+	plotByID := make(map[string]entity.Plot, len(plotRows))
+	for i, plot := range plotRows {
+		plotIDs[i] = plot.ID
+		plotByID[plot.ID] = plot
+	}
+
+	blocks, err := u.BlockRepository.FindHarvestedByPlotIDs(db, plotIDs)
+	if err != nil {
+		return nil, fmt.Errorf("reading harvested blocks: %w", err)
+	}
+
+	memberNames, err := u.memberNamesOf(ctx, plotRows)
+	if err != nil {
+		return nil, err
+	}
+
+	varieties, err := u.VarietyRepository.FindAll(db)
+	if err != nil {
+		return nil, fmt.Errorf("reading the varieties: %w", err)
+	}
+	varietyByID := make(map[string]entity.Variety, len(varieties))
+	for _, variety := range varieties {
+		varietyByID[variety.ID] = variety
+	}
+
+	commodities, err := u.CommodityRepository.FindAll(db)
+	if err != nil {
+		return nil, fmt.Errorf("reading the commodities: %w", err)
+	}
+	commodityByID := make(map[string]entity.Commodity, len(commodities))
+	for _, commodity := range commodities {
+		commodityByID[commodity.ID] = commodity
+	}
+
+	records := make([]HarvestRecord, 0, len(blocks))
+	for _, block := range blocks {
+		// FindHarvestedByPlotIDs sudah menyaring yang null, tetapi membaca
+		// pointer tanpa memeriksanya adalah panic yang menunggu perubahan
+		// kueri di masa depan.
+		if block.ActualHarvestDate == nil || block.ActualYieldKg == nil {
+			continue
+		}
+
+		plot := plotByID[block.PlotID]
+		memberName := ""
+		if name := memberNames[plot.MemberID]; name != nil {
+			memberName = *name
+		}
+
+		records = append(records, HarvestRecord{
+			BlockID:       block.ID,
+			BlockLabel:    block.Label,
+			PlotID:        block.PlotID,
+			PlotName:      plot.Name,
+			MemberName:    memberName,
+			CommodityName: commodityByID[block.CommodityID].Name,
+			VarietyName:   varietyByID[block.VarietyID].Name,
+			AreaHa:        block.AreaHa,
+			PlantingDate:  block.PlantingDate,
+			HarvestDate:   *block.ActualHarvestDate,
+			ActualYieldKg: *block.ActualYieldKg,
+			PricePerKg:    block.ActualPricePerKg,
+			PaymentDate:   block.PaymentReceivedDate,
+		})
+	}
+
+	// Terbaru dulu: riwayat dibaca dari yang paling baru terjadi, dan id
+	// menjadi pemutus supaya urutannya tidak bergantung pada urutan baris.
+	sort.SliceStable(records, func(i, j int) bool {
+		if !records[i].HarvestDate.Equal(records[j].HarvestDate) {
+			return records[i].HarvestDate.After(records[j].HarvestDate)
+		}
+		return records[i].BlockID < records[j].BlockID
+	})
+
+	return records, nil
 }

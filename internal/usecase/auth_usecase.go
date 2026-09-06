@@ -243,6 +243,7 @@ func (u *AuthUseCase) createBuyerProfile(
 	ctx context.Context, userID string, request *model.SignupRequest,
 ) error {
 	organisation := strings.TrimSpace(request.Organisation)
+	phone := strings.TrimSpace(request.Phone)
 
 	profile := &entity.AppUser{
 		ID:            userID,
@@ -250,6 +251,7 @@ func (u *AuthUseCase) createBuyerProfile(
 		CooperativeID: nil,
 		FullName:      strings.TrimSpace(request.FullName),
 		Organisation:  &organisation,
+		Phone:         &phone,
 	}
 
 	tx := u.DB.WithContext(ctx).Begin()
