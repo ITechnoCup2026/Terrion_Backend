@@ -368,6 +368,21 @@ func (u *PlanningUseCase) memberNames(
 	return names, nil
 }
 
+func (u *PlanningUseCase) memberPhones(
+	ctx context.Context, cooperativeID string,
+) (map[string]*string, error) {
+	members, err := u.MemberRepository.FindByCooperativeID(u.DB.WithContext(ctx), cooperativeID)
+	if err != nil {
+		return nil, fmt.Errorf("reading members of cooperative %s: %w", cooperativeID, err)
+	}
+
+	phones := make(map[string]*string, len(members))
+	for _, member := range members {
+		phones[member.ID] = member.Phone
+	}
+	return phones, nil
+}
+
 func (u *PlanningUseCase) buildCandidates(
 	projection Projection,
 	normals map[weather.GridCell][]agronomy.ClimateNormal,
@@ -881,6 +896,7 @@ type StoredPlan struct {
 	Plan           entity.SeasonPlan
 	Items          []entity.SeasonPlanItem
 	MemberNames    map[string]string
+	MemberPhones   map[string]*string
 	PlotNames      map[string]string
 	CommodityNames map[string]string
 	VarietyNames   map[string]string
@@ -1060,6 +1076,11 @@ func (u *PlanningUseCase) Get(
 		return StoredPlan{}, err
 	}
 
+	memberPhones, err := u.memberPhones(ctx, *user.CooperativeID)
+	if err != nil {
+		return StoredPlan{}, err
+	}
+
 	plotNames, err := u.plotNames(db, *user.CooperativeID)
 	if err != nil {
 		return StoredPlan{}, err
@@ -1079,6 +1100,7 @@ func (u *PlanningUseCase) Get(
 		Plan:           *plan,
 		Items:          items,
 		MemberNames:    memberNames,
+		MemberPhones:   memberPhones,
 		PlotNames:      plotNames,
 		CommodityNames: commodityNames,
 		VarietyNames:   varietyNames,
