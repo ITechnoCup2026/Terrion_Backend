@@ -8,11 +8,12 @@ type PlantingRequest struct {
 }
 
 type CreatePlotRequest struct {
-	MemberName string            `json:"member_name" validate:"required,min=2"`
-	PlotName   string            `json:"plot_name" validate:"required,min=1"`
-	Lat        *float64          `json:"lat" validate:"required,min=-11,max=6"`
-	Lng        *float64          `json:"lng" validate:"required,min=95,max=141"`
-	Plantings  []PlantingRequest `json:"plantings" validate:"required,min=1,max=6,dive"`
+	MemberName  string            `json:"member_name" validate:"required,min=2"`
+	MemberPhone *string           `json:"member_phone" validate:"omitempty,min=8,max=15"`
+	PlotName    string            `json:"plot_name" validate:"required,min=1"`
+	Lat         *float64          `json:"lat" validate:"required,min=-11,max=6"`
+	Lng         *float64          `json:"lng" validate:"required,min=95,max=141"`
+	Plantings   []PlantingRequest `json:"plantings" validate:"required,min=1,max=6,dive"`
 }
 
 type CreatePlotResponse struct {

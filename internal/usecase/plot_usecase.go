@@ -252,7 +252,9 @@ func (u *PlotUseCase) Create(
 		}
 	}
 
-	if err := u.persistPlot(ctx, cooperativeID, request.MemberName, plot, blocks); err != nil {
+	if err := u.persistPlot(
+		ctx, cooperativeID, request.MemberName, request.MemberPhone, plot, blocks,
+	); err != nil {
 		return CreatedPlot{}, err
 	}
 
@@ -262,13 +264,13 @@ func (u *PlotUseCase) Create(
 }
 
 func (u *PlotUseCase) persistPlot(
-	ctx context.Context, cooperativeID, memberName string,
+	ctx context.Context, cooperativeID, memberName string, memberPhone *string,
 	plot *entity.Plot, blocks []entity.Block,
 ) error {
 	tx := u.DB.WithContext(ctx).Begin()
 	defer tx.Rollback()
 
-	memberID, err := u.findOrCreateMember(tx, cooperativeID, memberName)
+	memberID, err := u.findOrCreateMember(tx, cooperativeID, memberName, memberPhone)
 	if err != nil {
 		return err
 	}
@@ -288,13 +290,19 @@ func (u *PlotUseCase) persistPlot(
 }
 
 func (u *PlotUseCase) findOrCreateMember(
-	tx *gorm.DB, cooperativeID, name string,
+	tx *gorm.DB, cooperativeID, name string, phone *string,
 ) (string, error) {
 	existing, err := u.MemberRepository.FindByNameInCooperative(tx, cooperativeID, name)
 	if err != nil {
 		return "", fmt.Errorf("looking up member %q: %w", name, err)
 	}
 	if existing != nil {
+		if existing.Phone == nil && phone != nil {
+			existing.Phone = phone
+			if err := u.MemberRepository.Update(tx, existing); err != nil {
+				return "", fmt.Errorf("saving phone for member %q: %w", name, err)
+			}
+		}
 		return existing.ID, nil
 	}
 
@@ -302,6 +310,7 @@ func (u *PlotUseCase) findOrCreateMember(
 		ID:            uuid.NewString(),
 		CooperativeID: cooperativeID,
 		Name:          name,
+		Phone:         phone,
 	}
 	if err := u.MemberRepository.Create(tx, member); err != nil {
 		return "", fmt.Errorf("creating member %q: %w", name, err)

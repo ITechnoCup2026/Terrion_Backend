@@ -125,12 +125,14 @@ func StoredPlanToResponse(stored usecase.StoredPlan) *model.SeasonPlanResponse {
 		}
 	}
 
-	response.MemberShares = memberSharesToResponse(stored.Items, stored.MemberNames, stored.ShareTokens)
+	response.MemberShares = memberSharesToResponse(
+		stored.Items, stored.MemberNames, stored.MemberPhones, stored.ShareTokens)
 	return response
 }
 
 func memberSharesToResponse(
-	items []entity.SeasonPlanItem, memberNames map[string]string, tokens []entity.PlanShareToken,
+	items []entity.SeasonPlanItem, memberNames map[string]string, memberPhones map[string]*string,
+	tokens []entity.PlanShareToken,
 ) []model.MemberShareResponse {
 	tokenByMember := make(map[string]entity.PlanShareToken, len(tokens))
 	for _, token := range tokens {
@@ -147,10 +149,11 @@ func memberSharesToResponse(
 
 		token := tokenByMember[item.MemberID]
 		share := model.MemberShareResponse{
-			MemberID:   item.MemberID,
-			MemberName: memberNames[item.MemberID],
-			ShareToken: token.ID,
-			Viewed:     token.FirstViewedAt != nil,
+			MemberID:    item.MemberID,
+			MemberName:  memberNames[item.MemberID],
+			MemberPhone: memberPhones[item.MemberID],
+			ShareToken:  token.ID,
+			Viewed:      token.FirstViewedAt != nil,
 		}
 		if token.FirstViewedAt != nil {
 			firstViewed := token.FirstViewedAt.UTC().Format(time.RFC3339)

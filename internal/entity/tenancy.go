@@ -37,6 +37,7 @@ type Member struct {
 	ID            string    `gorm:"column:id;primaryKey"`
 	CooperativeID string    `gorm:"column:cooperative_id"`
 	Name          string    `gorm:"column:name"`
+	Phone         *string   `gorm:"column:phone"`
 	NIKHash       *string   `gorm:"column:nik_hash"`
 	CreatedAt     time.Time `gorm:"column:created_at"`
 }

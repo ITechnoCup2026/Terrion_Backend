@@ -62,6 +62,45 @@ func TestGetIncludesAnUnviewedMemberShare(t *testing.T) {
 	}
 }
 
+func TestGetIncludesTheMembersPhoneWhenSet(t *testing.T) {
+	db := seedPlanningFixture(t)
+	useCase := planningUseCase(t, db)
+	user := planningManager(t, db)
+	plan := seedAppliedPlan(t, useCase, user, planAssignments(1))
+
+	phone := "081234567890"
+	if err := db.Model(&entity.Member{}).Where("id = ?", "member-plot-1").
+		Update("phone", phone).Error; err != nil {
+		t.Fatalf("seeding member phone: %v", err)
+	}
+
+	stored, err := useCase.Get(context.Background(), user, plan.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+
+	got := stored.MemberPhones["member-plot-1"]
+	if got == nil || *got != phone {
+		t.Errorf("MemberPhones[member-plot-1] = %v, want %q", got, phone)
+	}
+}
+
+func TestGetLeavesPhoneNilWhenTheMemberHasNone(t *testing.T) {
+	db := seedPlanningFixture(t)
+	useCase := planningUseCase(t, db)
+	user := planningManager(t, db)
+	plan := seedAppliedPlan(t, useCase, user, planAssignments(1))
+
+	stored, err := useCase.Get(context.Background(), user, plan.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+
+	if got := stored.MemberPhones["member-plot-1"]; got != nil {
+		t.Errorf("MemberPhones[member-plot-1] = %v, want nil", *got)
+	}
+}
+
 func TestViewShareRejectsUnknownToken(t *testing.T) {
 	db := seedPlanningFixture(t)
 	useCase := planningUseCase(t, db)

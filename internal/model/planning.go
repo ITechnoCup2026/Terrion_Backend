@@ -145,6 +145,7 @@ type SeasonPlanItemResponse struct {
 type MemberShareResponse struct {
 	MemberID      string  `json:"member_id"`
 	MemberName    string  `json:"member_name"`
+	MemberPhone   *string `json:"member_phone"`
 	ShareToken    string  `json:"share_token"`
 	Viewed        bool    `json:"viewed"`
 	FirstViewedAt *string `json:"first_viewed_at"`

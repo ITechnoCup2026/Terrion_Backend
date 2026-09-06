@@ -265,6 +265,83 @@ func TestPlotCreateReusesAMemberWhateverTheCase(t *testing.T) {
 	}
 }
 
+func TestPlotCreateStoresThePhoneOnANewMember(t *testing.T) {
+	db, user := plotFixture(t)
+	useCase := plotUseCase(t, db)
+
+	phone := "081234567890"
+	request := createPlotRequest()
+	request.MemberName = "Bu Sri"
+	request.MemberPhone = &phone
+
+	created, err := useCase.Create(context.Background(), user, request)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	stored := new(entity.Plot)
+	if err := db.Where("id = ?", created.PlotID).Take(stored).Error; err != nil {
+		t.Fatalf("reading back plot: %v", err)
+	}
+	member := new(entity.Member)
+	if err := db.Where("id = ?", stored.MemberID).Take(member).Error; err != nil {
+		t.Fatalf("reading back member: %v", err)
+	}
+	if member.Phone == nil || *member.Phone != phone {
+		t.Errorf("Phone = %v, want %q", member.Phone, phone)
+	}
+}
+
+func TestPlotCreateFillsAMissingPhoneOnAnExistingMember(t *testing.T) {
+	db, user := plotFixture(t)
+	useCase := plotUseCase(t, db)
+
+	phone := "081200000000"
+	request := createPlotRequest()
+	request.MemberName = "pak asep"
+	request.MemberPhone = &phone
+
+	if _, err := useCase.Create(context.Background(), user, request); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	member := new(entity.Member)
+	if err := db.Where("id = ?", "member-plot-home").Take(member).Error; err != nil {
+		t.Fatalf("reading back member: %v", err)
+	}
+	if member.Phone == nil || *member.Phone != phone {
+		t.Errorf("Phone = %v, want %q (member had none before)", member.Phone, phone)
+	}
+}
+
+func TestPlotCreateNeverOverwritesAnExistingPhone(t *testing.T) {
+	db, user := plotFixture(t)
+	useCase := plotUseCase(t, db)
+
+	original := "081211111111"
+	if err := db.Model(&entity.Member{}).Where("id = ?", "member-plot-home").
+		Update("phone", original).Error; err != nil {
+		t.Fatalf("seeding existing phone: %v", err)
+	}
+
+	newer := "081299999999"
+	request := createPlotRequest()
+	request.MemberName = "pak asep"
+	request.MemberPhone = &newer
+
+	if _, err := useCase.Create(context.Background(), user, request); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	member := new(entity.Member)
+	if err := db.Where("id = ?", "member-plot-home").Take(member).Error; err != nil {
+		t.Fatalf("reading back member: %v", err)
+	}
+	if member.Phone == nil || *member.Phone != original {
+		t.Errorf("Phone = %v, want unchanged %q", member.Phone, original)
+	}
+}
+
 func TestPlotCreateRejectsAnAccountWithNoCooperative(t *testing.T) {
 	db, _ := plotFixture(t)
 	buyer := &entity.AppUser{ID: "buyer-1", Role: constants.RoleBuyer}
