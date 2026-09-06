@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"hash/fnv"
 	"math"
 	"math/rand"
 	"os"
@@ -52,12 +53,20 @@ type plotSpec struct {
 }
 
 type cooperativeSpec struct {
+	// Short, unique, and safe in an email local part: the demo pengurus for
+	// this cooperative signs in as pengurus.<key>@<domain>. Numbering the
+	// accounts instead would mean every cooperative added in the middle of the
+	// list silently renames somebody else's login.
+	key      string
 	name     string
 	village  string
 	district string
 	province string
 	lat      float64
 	lng      float64
+	// The pengurus who gets an account for this cooperative. Seeded members
+	// are not accounts; this person is both.
+	manager  string
 	capacity map[string]float64
 	plots    []plotSpec
 }
@@ -114,7 +123,7 @@ func main() {
 		}
 	}
 
-	specs := []cooperativeSpec{subang(), brebes()}
+	specs := cooperativeSpecs()
 	seeded := make([]*seededCooperative, len(specs))
 
 	for i, spec := range specs {
@@ -123,13 +132,13 @@ func main() {
 			log.Fatalf("seeding %s: %v", spec.name, err)
 		}
 		seeded[i] = created
-		fmt.Printf("Koperasi %-26s %d lahan, %d blok\n",
-			spec.name, len(created.plotIDs), created.blocks)
+		fmt.Printf("Koperasi %-30s %-20s %2d lahan, %3d blok\n",
+			spec.name, spec.province, len(created.plotIDs), created.blocks)
 	}
 
 	accounts := []accountSpec{}
 	if *withAccounts {
-		accounts = accountSpecs(*emailDomain)
+		accounts = accountSpecs(*emailDomain, specs)
 		if err := register(ctx, db, goTrue, accounts, seeded, *password); err != nil {
 			log.Fatalf("creating the demo accounts: %v", err)
 		}
@@ -174,8 +183,9 @@ func usage() {
 Mengisi basis data dengan koperasi contoh yang lengkap, supaya setiap layar
 Terrion punya sesuatu untuk ditampilkan saat diuji:
 
-  - dua koperasi (Jawa Barat dan Jawa Tengah) untuk Atlas dan Katalog
-  - anggota, lahan, dan blok pada enam komoditas dan dua belas varietas
+  - dua belas koperasi di sepuluh provinsi, supaya Atlas dan Katalog
+    menyala di luar Jawa
+  - anggota, lahan, dan blok pada enam komoditas dan seluruh varietas acuan
   - panen lampau yang lengkap dengan harga dan tanggal bayar, supaya panel
     Dampak dan kalibrasi model terisi
   - tumpukan panen yang sengaja dibuat pada satu minggu, supaya deteksi
@@ -184,27 +194,83 @@ Terrion punya sesuatu untuk ditampilkan saat diuji:
 
 Jalankan dari akar repo, karena .env dibaca dari direktori kerja.
 
+Cuaca adalah bagian paling lambat: sepuluh tahun data harian diunduh dari
+Open-Meteo untuk setiap sel grid 0,25 derajat, dan dua belas koperasi
+menyentuh jauh lebih banyak sel daripada dua. Pakai -weather=false untuk
+mengisi data tanpa menunggu; proyeksi panen akan kosong sampai backfill
+dijalankan.
+
 `)
 	flag.PrintDefaults()
 }
 
-func accountSpecs(domain string) []accountSpec {
-	return []accountSpec{
+// One login per cooperative, plus the two short ones the first cooperative has
+// always had.
+//
+// The first cooperative keeps `pengurus@` and `kader@` because that pair is
+// what gets typed during a demo and it is the only one carrying both roles.
+// Every other cooperative gets pengurus.<key>@, so a reviewer can sign into
+// any province rather than only ever seeing Subang's data.
+func accountSpecs(domain string, specs []cooperativeSpec) []accountSpec {
+	accounts := []accountSpec{
 		{constants.RolePengurus, "pengurus@" + domain, "Bu Sri Wahyuni", "", 0},
 		{constants.RoleKader, "kader@" + domain, "Pak Asep Suryana", "", 0},
-		{constants.RolePengurus, "pengurus2@" + domain, "Pak Joko Purnomo", "", 1},
-		{constants.RoleBuyer, "pembeli@" + domain, buyerName, "PT Pangan Nusantara", -1},
+	}
+
+	for i, spec := range specs {
+		if i == 0 {
+			continue
+		}
+		accounts = append(accounts, accountSpec{
+			role:        constants.RolePengurus,
+			email:       "pengurus." + spec.key + "@" + domain,
+			fullName:    spec.manager,
+			cooperative: i,
+		})
+	}
+
+	return append(accounts, accountSpec{
+		role:         constants.RoleBuyer,
+		email:        "pembeli@" + domain,
+		fullName:     buyerName,
+		organisation: "PT Pangan Nusantara",
+		cooperative:  -1,
+	})
+}
+
+// Every demo cooperative, in the order the rest of the seed indexes them.
+//
+// Index 0 and 1 are load-bearing: the input orders and the buyer's supply
+// requests are written against them by position, and Subang is the one tuned
+// to pile several harvests into a single week so the collision detector has
+// something to find. New cooperatives are appended, never inserted.
+func cooperativeSpecs() []cooperativeSpec {
+	return []cooperativeSpec{
+		subang(),    // Jawa Barat
+		brebes(),    // Jawa Tengah
+		garut(),     // Jawa Barat
+		wonosobo(),  // Jawa Tengah
+		malang(),    // Jawa Timur
+		karo(),      // Sumatera Utara
+		banyuasin(), // Sumatera Selatan
+		lampung(),   // Lampung
+		sidrap(),    // Sulawesi Selatan
+		tabanan(),   // Bali
+		lombok(),    // Nusa Tenggara Barat
+		barito(),    // Kalimantan Selatan
 	}
 }
 
 func subang() cooperativeSpec {
 	return cooperativeSpec{
+		key:      "subang",
 		name:     subangName,
 		village:  "Jalancagak",
 		district: "Subang",
 		province: "Jawa Barat",
 		lat:      -6.4200,
 		lng:      107.6800,
+		manager:  "Bu Sri Wahyuni",
 		capacity: map[string]float64{"padi": 18, "jagung": 12},
 		plots: []plotSpec{
 			{
@@ -329,12 +395,14 @@ func subang() cooperativeSpec {
 
 func brebes() cooperativeSpec {
 	return cooperativeSpec{
+		key:      "brebes",
 		name:     brebesName,
 		village:  "Bumiayu",
 		district: "Brebes",
 		province: "Jawa Tengah",
 		lat:      -7.2000,
 		lng:      108.9800,
+		manager:  "Pak Joko Purnomo",
 		capacity: map[string]float64{},
 		plots: []plotSpec{
 			{
@@ -367,6 +435,575 @@ func brebes() cooperativeSpec {
 				member: "Pak Slamet Riyadi", name: "Sawah Tonjong",
 				lat: -7.2410, lng: 109.0035,
 				blocks: []blockSpec{{"padi", "IR64", 1.10, 105, nil}},
+			},
+		},
+	}
+}
+
+// The ten cooperatives added beyond the original two.
+//
+// Each one is a real growing district paired with what that district actually
+// grows -- potatoes and carrots on the Karo and Dieng plateaus, maize on the
+// Lampung plains, rice in Sidrap and the Barito swamps -- because the Atlas
+// and the catalogue are read as a map of Indonesian agriculture, and a
+// cooperative growing strawberries in Banyuasin would say the data is invented
+// before a single figure is checked.
+//
+// Plots are kept within about 0.06 degrees of their cooperative on purpose.
+// Weather is backfilled per 0.25-degree grid cell, ten years each, so plots
+// scattered across a regency turn one download into four.
+//
+// Between them these plant every variety added in 20260907000013; a variety
+// nothing stands on is a row nobody ever sees.
+
+func garut() cooperativeSpec {
+	return cooperativeSpec{
+		key:      "garut",
+		name:     "KUD Mekar Tani Garut",
+		village:  "Cikajang",
+		district: "Garut",
+		province: "Jawa Barat",
+		lat:      -7.3700,
+		lng:      107.8000,
+		manager:  "Pak Endang Suherman",
+		capacity: map[string]float64{"kentang": 7},
+		plots: []plotSpec{
+			{
+				member: "Pak Endang Suherman", name: "Kebun Cikajang 1",
+				lat: -7.3665, lng: 107.8045,
+				blocks: []blockSpec{
+					{"kentang", "Repita", 0.75, 68, nil},
+					{"kentang", "Granola Kembang", 0.55, 34, nil},
+					{"kentang", "Repita", 0.75, 122,
+						&harvestSpec{97, 20.0, 13000, 12}},
+				},
+			},
+			{
+				member: "Pak Endang Suherman", name: "Kebun Cikajang 2",
+				lat: -7.3755, lng: 107.7930,
+				blocks: []blockSpec{
+					{"wortel", "Chantenay", 0.50, 58, nil},
+					{"wortel", "Imperator", 0.35, 26, nil},
+				},
+			},
+			{
+				member: "Bu Neneng Hasanah", name: "Kebun Cisurupan",
+				lat: -7.3510, lng: 107.8215,
+				blocks: []blockSpec{
+					{"cabai", "Cabai keriting", 0.42, 76, nil},
+					{"cabai", "Cabai besar Lembang-1", 0.30, 40, nil},
+					{"cabai", "Cabai keriting", 0.42, 124,
+						&harvestSpec{102, 9.8, 47000, 9}},
+				},
+			},
+			{
+				member: "Pak Dadang Sopandi", name: "Ladang Bayongbong",
+				lat: -7.3890, lng: 107.7760,
+				blocks: []blockSpec{
+					{"kentang", "Amudra", 0.60, 50, nil},
+					{"beri", "Stroberi Sweet Charlie", 0.24, 22, nil},
+				},
+			},
+			{
+				member: "Bu Neneng Hasanah", name: "Kebun Pasirwangi",
+				lat: -7.3395, lng: 107.8330,
+				blocks: []blockSpec{{"wortel", "Kuroda", 0.55, 44, nil}},
+			},
+		},
+	}
+}
+
+func wonosobo() cooperativeSpec {
+	return cooperativeSpec{
+		key:      "wonosobo",
+		name:     "KUD Dieng Makmur Wonosobo",
+		village:  "Kejajar",
+		district: "Wonosobo",
+		province: "Jawa Tengah",
+		lat:      -7.2100,
+		lng:      109.9100,
+		manager:  "Bu Tri Astuti",
+		capacity: map[string]float64{"kentang": 6},
+		plots: []plotSpec{
+			{
+				member: "Bu Tri Astuti", name: "Kebun Kejajar 1",
+				lat: -7.2065, lng: 109.9145,
+				blocks: []blockSpec{
+					{"kentang", "Median", 0.70, 64, nil},
+					{"kentang", "Granola Kembang", 0.50, 30, nil},
+					{"kentang", "Median", 0.70, 118,
+						&harvestSpec{95, 19.5, 12600, 11}},
+				},
+			},
+			{
+				member: "Bu Tri Astuti", name: "Kebun Kejajar 2",
+				lat: -7.2155, lng: 109.9035,
+				blocks: []blockSpec{
+					{"wortel", "Lokal Tawangmangu", 0.45, 54, nil},
+					{"wortel", "Kuroda", 0.35, 24, nil},
+				},
+			},
+			{
+				member: "Pak Sarwono", name: "Kebun Garung",
+				lat: -7.2290, lng: 109.9280,
+				blocks: []blockSpec{
+					{"kentang", "Amudra", 0.65, 72, nil},
+					{"kentang", "Repita", 0.45, 36, nil},
+				},
+			},
+			{
+				member: "Pak Sarwono", name: "Ladang Mojotengah",
+				lat: -7.2440, lng: 109.8920,
+				blocks: []blockSpec{
+					{"jagung", "Srikandi Kuning", 0.90, 48, nil},
+					{"cabai", "Cabai keriting", 0.28, 30, nil},
+				},
+			},
+			{
+				member: "Bu Sumarni", name: "Kebun Sikunang",
+				lat: -7.1950, lng: 109.9350,
+				blocks: []blockSpec{
+					{"beri", "Stroberi Earlibrite", 0.22, 40, nil},
+					{"wortel", "Chantenay", 0.40, 20, nil},
+				},
+			},
+		},
+	}
+}
+
+func malang() cooperativeSpec {
+	return cooperativeSpec{
+		key:      "malang",
+		name:     "KUD Rukun Tani Malang",
+		village:  "Tumpang",
+		district: "Malang",
+		province: "Jawa Timur",
+		lat:      -8.0079,
+		lng:      112.7550,
+		manager:  "Pak Hariyanto",
+		capacity: map[string]float64{"jagung": 10},
+		plots: []plotSpec{
+			{
+				member: "Bu Sri Rahayu", name: "Ladang Tumpang 1",
+				lat: -8.0035, lng: 112.7590,
+				blocks: []blockSpec{
+					{"jagung", "Nasa-29", 1.40, 65, nil},
+					{"jagung", "NK Perkasa", 1.10, 32, nil},
+					{"jagung", "Nasa-29", 1.40, 128,
+						&harvestSpec{102, 9.1, 5000, 12}},
+				},
+			},
+			{
+				member: "Bu Sri Rahayu", name: "Ladang Tumpang 2",
+				lat: -8.0120, lng: 112.7480,
+				blocks: []blockSpec{{"jagung", "Bima-20 URI", 0.95, 48, nil}},
+			},
+			{
+				member: "Pak Hariyanto", name: "Kebun Poncokusumo",
+				lat: -8.0345, lng: 112.7905,
+				blocks: []blockSpec{
+					{"kentang", "Median", 0.65, 70, nil},
+					{"wortel", "Kuroda", 0.45, 55, nil},
+					{"kentang", "Median", 0.65, 120,
+						&harvestSpec{96, 20.5, 12800, 10}},
+				},
+			},
+			{
+				member: "Pak Suparno", name: "Sawah Pakis",
+				lat: -7.9720, lng: 112.7100,
+				blocks: []blockSpec{
+					{"padi", "Inpari 32 HDB", 1.70, 95, nil},
+					{"padi", "Inpari 32 HDB", 1.70, 140,
+						&harvestSpec{116, 6.3, 6400, 9}},
+				},
+			},
+			{
+				member: "Bu Endah Prihatin", name: "Kebun Wajak",
+				lat: -8.0510, lng: 112.7345,
+				blocks: []blockSpec{
+					{"cabai", "Cabai keriting", 0.40, 58, nil},
+					{"beri", "Stroberi Earlibrite", 0.20, 25, nil},
+				},
+			},
+			{
+				member: "Pak Suparno", name: "Ladang Jabung",
+				lat: -7.9880, lng: 112.7820,
+				blocks: []blockSpec{{"jagung", "Pioneer P27", 1.20, 40, nil}},
+			},
+		},
+	}
+}
+
+func karo() cooperativeSpec {
+	return cooperativeSpec{
+		key:      "karo",
+		name:     "KUD Karo Bertani",
+		village:  "Berastagi",
+		district: "Karo",
+		province: "Sumatera Utara",
+		lat:      3.1900,
+		lng:      98.5100,
+		manager:  "Pak Jhon Sitepu",
+		capacity: map[string]float64{"kentang": 8},
+		plots: []plotSpec{
+			{
+				member: "Pak Jhon Sitepu", name: "Kebun Berastagi 1",
+				lat: 3.1935, lng: 98.5060,
+				blocks: []blockSpec{
+					{"kentang", "Granola Kembang", 0.80, 72, nil},
+					{"kentang", "Repita", 0.55, 35, nil},
+					{"kentang", "Granola Kembang", 0.80, 124,
+						&harvestSpec{99, 21.5, 13100, 14}},
+				},
+			},
+			{
+				member: "Pak Jhon Sitepu", name: "Kebun Berastagi 2",
+				lat: 3.1860, lng: 98.5145,
+				blocks: []blockSpec{
+					{"wortel", "Imperator", 0.60, 66, nil},
+					{"wortel", "Chantenay", 0.40, 28, nil},
+				},
+			},
+			{
+				member: "Bu Rosmita Br Ginting", name: "Ladang Simpang Empat",
+				lat: 3.2085, lng: 98.4880,
+				blocks: []blockSpec{
+					{"cabai", "Cabai merah Tanjung-2", 0.50, 80, nil},
+					{"cabai", "Cabai keriting", 0.35, 44, nil},
+					{"cabai", "Cabai merah Tanjung-2", 0.50, 126,
+						&harvestSpec{104, 9.4, 48000, 8}},
+				},
+			},
+			{
+				member: "Pak Rendi Tarigan", name: "Kebun Merdeka",
+				lat: 3.1710, lng: 98.5290,
+				blocks: []blockSpec{
+					{"beri", "Stroberi Sweet Charlie", 0.30, 52, nil},
+					{"beri", "Stroberi Rosalinda", 0.22, 24, nil},
+				},
+			},
+			{
+				member: "Bu Ester Br Sembiring", name: "Kebun Tigapanah",
+				lat: 3.1590, lng: 98.5405,
+				blocks: []blockSpec{
+					{"kentang", "Amudra", 0.70, 60, nil},
+					{"wortel", "Kuroda", 0.50, 42, nil},
+				},
+			},
+			{
+				member: "Pak Rendi Tarigan", name: "Ladang Barusjahe",
+				lat: 3.1445, lng: 98.5620,
+				blocks: []blockSpec{{"kentang", "Median", 0.90, 30, nil}},
+			},
+		},
+	}
+}
+
+func banyuasin() cooperativeSpec {
+	return cooperativeSpec{
+		key:      "banyuasin",
+		name:     "KUD Sriwijaya Tani",
+		village:  "Tanjung Lago",
+		district: "Banyuasin",
+		province: "Sumatera Selatan",
+		lat:      -2.6300,
+		lng:      104.6200,
+		manager:  "Pak Ahmad Fauzi",
+		capacity: map[string]float64{"padi": 20},
+		plots: []plotSpec{
+			{
+				member: "Pak Ahmad Fauzi", name: "Sawah Tanjung Lago 1",
+				lat: -2.6265, lng: 104.6240,
+				blocks: []blockSpec{
+					{"padi", "Inpari 42 Agritan GSR", 2.40, 92, nil},
+					{"padi", "Inpari 42 Agritan GSR", 2.40, 145,
+						&harvestSpec{119, 6.9, 6300, 11}},
+				},
+			},
+			{
+				member: "Pak Ahmad Fauzi", name: "Sawah Tanjung Lago 2",
+				lat: -2.6340, lng: 104.6155,
+				blocks: []blockSpec{{"padi", "Cisadane", 2.10, 104, nil}},
+			},
+			{
+				member: "Bu Marlina", name: "Sawah Muara Telang",
+				lat: -2.6520, lng: 104.6480,
+				blocks: []blockSpec{
+					{"padi", "IR42", 1.80, 118, nil},
+					{"padi", "IR42", 1.80, 160,
+						&harvestSpec{132, 5.4, 6100, 20}},
+				},
+			},
+			{
+				member: "Pak Zainal Abidin", name: "Sawah Air Saleh",
+				lat: -2.6055, lng: 104.5915,
+				blocks: []blockSpec{{"padi", "Ciliwung", 2.60, 88, nil}},
+			},
+			{
+				member: "Bu Siti Khodijah", name: "Ladang Betung",
+				lat: -2.5930, lng: 104.6605,
+				blocks: []blockSpec{
+					{"jagung", "Bisi-2", 1.30, 50, nil},
+					{"jagung", "Srikandi Kuning", 0.90, 26, nil},
+				},
+			},
+		},
+	}
+}
+
+func lampung() cooperativeSpec {
+	return cooperativeSpec{
+		key:      "lamteng",
+		name:     "KUD Sinar Tani Terbanggi",
+		village:  "Terbanggi Besar",
+		district: "Lampung Tengah",
+		province: "Lampung",
+		lat:      -4.8200,
+		lng:      105.2200,
+		manager:  "Pak Sugiyono",
+		capacity: map[string]float64{"jagung": 14},
+		plots: []plotSpec{
+			{
+				member: "Pak Sugiyono", name: "Ladang Terbanggi 1",
+				lat: -4.8165, lng: 105.2245,
+				blocks: []blockSpec{
+					{"jagung", "NK Perkasa", 2.20, 62, nil},
+					{"jagung", "Nasa-29", 1.60, 30, nil},
+					{"jagung", "NK Perkasa", 2.20, 126,
+						&harvestSpec{100, 9.8, 4900, 13}},
+				},
+			},
+			{
+				member: "Pak Sugiyono", name: "Ladang Terbanggi 2",
+				lat: -4.8255, lng: 105.2130,
+				blocks: []blockSpec{{"jagung", "Bima-20 URI", 1.80, 44, nil}},
+			},
+			{
+				member: "Bu Ngatinem", name: "Ladang Seputih Mataram",
+				lat: -4.8480, lng: 105.2510,
+				blocks: []blockSpec{
+					{"jagung", "Bisi-2", 1.50, 56, nil},
+					{"jagung", "Pioneer P27", 1.20, 22, nil},
+				},
+			},
+			{
+				member: "Pak Wagimin", name: "Sawah Punggur",
+				lat: -4.7960, lng: 105.1885,
+				blocks: []blockSpec{
+					{"padi", "Mekongga", 1.90, 98, nil},
+					{"padi", "Mekongga", 1.90, 142,
+						&harvestSpec{118, 6.2, 6200, 10}},
+				},
+			},
+			{
+				member: "Bu Rukmini", name: "Ladang Gunung Sugih",
+				lat: -4.8620, lng: 105.1960,
+				blocks: []blockSpec{
+					{"cabai", "Cabai rawit Bhaskara", 0.45, 68, nil},
+					{"jagung", "Srikandi Kuning", 1.00, 34, nil},
+				},
+			},
+		},
+	}
+}
+
+func sidrap() cooperativeSpec {
+	return cooperativeSpec{
+		key:      "sidrap",
+		name:     "KUD Bina Tani Sidrap",
+		village:  "Maritengngae",
+		district: "Sidenreng Rappang",
+		province: "Sulawesi Selatan",
+		lat:      -3.8500,
+		lng:      119.8000,
+		manager:  "Pak Andi Baso",
+		capacity: map[string]float64{"padi": 22},
+		plots: []plotSpec{
+			{
+				member: "Pak Andi Baso", name: "Sawah Pangkajene 1",
+				lat: -3.8465, lng: 119.8045,
+				blocks: []blockSpec{
+					{"padi", "Inpari 32 HDB", 2.80, 96, nil},
+					{"padi", "Inpari 32 HDB", 2.80, 140,
+						&harvestSpec{114, 7.1, 6000, 8}},
+				},
+			},
+			{
+				member: "Pak Andi Baso", name: "Sawah Pangkajene 2",
+				lat: -3.8555, lng: 119.7930,
+				blocks: []blockSpec{{"padi", "Inpari 30 Ciherang Sub1", 2.30, 106, nil}},
+			},
+			{
+				member: "Bu Hj. Rosmini", name: "Sawah Maritengngae",
+				lat: -3.8290, lng: 119.8215,
+				blocks: []blockSpec{
+					{"padi", "Mekongga", 2.00, 90, nil},
+					{"padi", "Mekongga", 2.00, 136,
+						&harvestSpec{112, 6.6, 6150, 12}},
+				},
+			},
+			{
+				member: "Pak Abd. Rahman", name: "Sawah Watang Pulu",
+				lat: -3.8720, lng: 119.7745,
+				blocks: []blockSpec{{"padi", "Ciliwung", 1.70, 112, nil}},
+			},
+			{
+				member: "Bu Nurul Hidayah", name: "Ladang Baranti",
+				lat: -3.8180, lng: 119.8390,
+				blocks: []blockSpec{
+					{"jagung", "Nasa-29", 1.40, 52, nil},
+					{"padi", "Situ Bagendit", 0.80, 38, nil},
+				},
+			},
+		},
+	}
+}
+
+func tabanan() cooperativeSpec {
+	return cooperativeSpec{
+		key:      "tabanan",
+		name:     "Subak Sari Tabanan",
+		village:  "Penebel",
+		district: "Tabanan",
+		province: "Bali",
+		lat:      -8.4700,
+		lng:      115.1000,
+		manager:  "Pak I Wayan Sudira",
+		capacity: map[string]float64{"padi": 9},
+		plots: []plotSpec{
+			{
+				member: "Pak I Wayan Sudira", name: "Subak Jatiluwih 1",
+				lat: -8.4665, lng: 115.1045,
+				blocks: []blockSpec{
+					{"padi", "Inpari 42 Agritan GSR", 1.10, 94, nil},
+					{"padi", "Inpari 42 Agritan GSR", 1.10, 138,
+						&harvestSpec{117, 6.4, 7400, 7}},
+				},
+			},
+			{
+				member: "Pak I Wayan Sudira", name: "Subak Jatiluwih 2",
+				lat: -8.4745, lng: 115.0935,
+				blocks: []blockSpec{{"padi", "Cisadane", 0.85, 108, nil}},
+			},
+			{
+				member: "Bu Ni Made Ayu", name: "Subak Penebel",
+				lat: -8.4870, lng: 115.1180,
+				blocks: []blockSpec{
+					{"padi", "Situ Bagendit", 0.95, 72, nil},
+					{"wortel", "Lokal Tawangmangu", 0.30, 46, nil},
+				},
+			},
+			{
+				member: "Pak I Ketut Gede", name: "Kebun Pupuan",
+				lat: -8.4510, lng: 115.0790,
+				blocks: []blockSpec{
+					{"cabai", "Cabai besar Lembang-1", 0.35, 64, nil},
+					{"beri", "Stroberi Rosalinda", 0.18, 28, nil},
+				},
+			},
+			{
+				member: "Bu Ni Nyoman Warti", name: "Subak Marga",
+				lat: -8.4955, lng: 115.1265,
+				blocks: []blockSpec{{"padi", "Ciliwung", 1.25, 86, nil}},
+			},
+		},
+	}
+}
+
+func lombok() cooperativeSpec {
+	return cooperativeSpec{
+		key:      "lomteng",
+		name:     "KUD Mandiri Lombok Tengah",
+		village:  "Praya",
+		district: "Lombok Tengah",
+		province: "Nusa Tenggara Barat",
+		lat:      -8.7000,
+		lng:      116.2700,
+		manager:  "Pak Lalu Ahmad",
+		capacity: map[string]float64{"padi": 11, "jagung": 8},
+		plots: []plotSpec{
+			{
+				member: "Pak Lalu Ahmad", name: "Sawah Praya 1",
+				lat: -8.6965, lng: 116.2745,
+				blocks: []blockSpec{
+					{"padi", "Inpari 32 HDB", 1.60, 90, nil},
+					{"padi", "Inpari 32 HDB", 1.60, 134,
+						&harvestSpec{115, 6.0, 6800, 9}},
+				},
+			},
+			{
+				member: "Pak Lalu Ahmad", name: "Sawah Praya 2",
+				lat: -8.7055, lng: 116.2635,
+				blocks: []blockSpec{{"padi", "Mekongga", 1.35, 100, nil}},
+			},
+			{
+				member: "Bu Baiq Hartini", name: "Ladang Batukliang",
+				lat: -8.6790, lng: 116.2915,
+				blocks: []blockSpec{
+					{"jagung", "Bima-20 URI", 1.50, 58, nil},
+					{"jagung", "Bisi-2", 1.10, 30, nil},
+				},
+			},
+			{
+				member: "Pak Lalu Sahid", name: "Ladang Jonggat",
+				lat: -8.7210, lng: 116.2480,
+				blocks: []blockSpec{
+					{"jagung", "Srikandi Kuning", 1.20, 46, nil},
+					{"cabai", "Cabai rawit Bhaskara", 0.35, 36, nil},
+				},
+			},
+			{
+				member: "Bu Baiq Nuraini", name: "Sawah Pujut",
+				lat: -8.7340, lng: 116.2830,
+				blocks: []blockSpec{{"padi", "Situ Bagendit", 1.05, 76, nil}},
+			},
+		},
+	}
+}
+
+func barito() cooperativeSpec {
+	return cooperativeSpec{
+		key:      "batola",
+		name:     "KUD Barito Tani",
+		village:  "Alalak",
+		district: "Barito Kuala",
+		province: "Kalimantan Selatan",
+		lat:      -3.2600,
+		lng:      114.5700,
+		manager:  "Pak Rusdiansyah",
+		capacity: map[string]float64{"padi": 12},
+		plots: []plotSpec{
+			{
+				member: "Pak Rusdiansyah", name: "Sawah Alalak 1",
+				lat: -3.2565, lng: 114.5745,
+				blocks: []blockSpec{
+					{"padi", "IR42", 1.90, 110, nil},
+					{"padi", "IR42", 1.90, 156,
+						&harvestSpec{130, 5.2, 6500, 16}},
+				},
+			},
+			{
+				member: "Pak Rusdiansyah", name: "Sawah Alalak 2",
+				lat: -3.2650, lng: 114.5630,
+				blocks: []blockSpec{{"padi", "Cisadane", 1.55, 98, nil}},
+			},
+			{
+				member: "Bu Norhalisah", name: "Sawah Anjir Muara",
+				lat: -3.2385, lng: 114.5895,
+				blocks: []blockSpec{{"padi", "Ciliwung", 2.05, 84, nil}},
+			},
+			{
+				member: "Pak Ahmad Rifani", name: "Sawah Mandastana",
+				lat: -3.2810, lng: 114.5480,
+				blocks: []blockSpec{{"padi", "Inpari 30 Ciherang Sub1", 1.70, 92, nil}},
+			},
+			{
+				member: "Bu Mariatul Kiptiah", name: "Ladang Belawang",
+				lat: -3.2940, lng: 114.5960,
+				blocks: []blockSpec{
+					{"jagung", "Bisi-2", 1.15, 54, nil},
+					{"cabai", "Cabai keriting", 0.30, 32, nil},
+				},
 			},
 		},
 	}
@@ -439,7 +1076,12 @@ func plant(db *gorm.DB, spec cooperativeSpec, now time.Time) (*seededCooperative
 	}
 	seeded.id = cooperative.ID
 
-	random := rand.New(rand.NewSource(int64(len(spec.name))))
+	// Seeded from the name's hash, not its length. Length collided the moment
+	// there was more than a handful of cooperatives -- "KUD Barito Tani" and
+	// "KUD Karo Bertani" would have drawn the identical terrain on every plot.
+	naming := fnv.New64a()
+	naming.Write([]byte(spec.name))
+	random := rand.New(rand.NewSource(int64(naming.Sum64() & math.MaxInt64)))
 
 	for _, wanted := range spec.plots {
 		memberID, known := seeded.members[wanted.member]
@@ -934,8 +1576,18 @@ func requestSupply(
 func clear(
 	ctx context.Context, db *gorm.DB, goTrue *supabase.Client, log *logrus.Logger,
 ) error {
+	// Taken from the specs rather than a hardcoded pair, so a cooperative added
+	// to the list is also a cooperative -reset knows how to remove. The old
+	// two-name literal meant every province added here would have survived a
+	// reset and been seeded again beside itself.
+	specs := cooperativeSpecs()
+	names := make([]string, len(specs))
+	for i, spec := range specs {
+		names[i] = spec.name
+	}
+
 	cooperatives := []entity.Cooperative{}
-	if err := db.Where("name IN ?", []string{subangName, brebesName}).
+	if err := db.Where("name IN ?", names).
 		Find(&cooperatives).Error; err != nil {
 		return fmt.Errorf("reading the demo cooperatives: %w", err)
 	}
@@ -996,11 +1648,14 @@ func report(
 		}
 	}
 
+	// One line each. Twelve four-line blocks pushed the account table and the
+	// public plot links off the top of the terminal, which are the two things
+	// somebody actually runs this to read.
 	fmt.Println("\nKoperasi")
 	for _, cooperative := range seeded {
-		fmt.Printf("  %s\n    id       %s\n    wilayah  %s, %s, %s\n",
-			cooperative.spec.name, cooperative.id,
-			cooperative.spec.village, cooperative.spec.district, cooperative.spec.province)
+		fmt.Printf("  %-30s %-20s %s, %s\n",
+			cooperative.spec.name, cooperative.spec.province,
+			cooperative.spec.village, cooperative.spec.district)
 	}
 
 	first := seeded[0]
