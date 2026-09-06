@@ -257,3 +257,55 @@ func notesWithPreference(
 	composed := strings.Join(lines, "\n")
 	return &composed
 }
+
+// Contacts mencari nomor kedua belah pihak untuk sekumpulan permintaan.
+//
+// Satu kueri per sisi, bukan satu per baris: daftar permintaan koperasi yang
+// ramai berisi puluhan baris dari pembeli yang sama.
+func (u *SupplyRequestUseCase) Contacts(
+	ctx context.Context, requests []entity.SupplyContractRequest,
+) (model.RequestContacts, error) {
+	contacts := model.RequestContacts{
+		BuyerPhone:       map[string]*string{},
+		CooperativeName:  map[string]string{},
+		CooperativePhone: map[string]*string{},
+	}
+	if len(requests) == 0 {
+		return contacts, nil
+	}
+
+	buyerIDs := []string{}
+	cooperativeIDs := []string{}
+	seen := map[string]bool{}
+	for _, request := range requests {
+		if !seen["b"+request.BuyerID] {
+			seen["b"+request.BuyerID] = true
+			buyerIDs = append(buyerIDs, request.BuyerID)
+		}
+		if !seen["c"+request.CooperativeID] {
+			seen["c"+request.CooperativeID] = true
+			cooperativeIDs = append(cooperativeIDs, request.CooperativeID)
+		}
+	}
+
+	db := u.DB.WithContext(ctx)
+
+	buyers := []entity.AppUser{}
+	if err := db.Where("id IN ?", buyerIDs).Find(&buyers).Error; err != nil {
+		return contacts, fmt.Errorf("reading the buyers' contacts: %w", err)
+	}
+	for _, buyer := range buyers {
+		contacts.BuyerPhone[buyer.ID] = buyer.Phone
+	}
+
+	cooperatives := []entity.Cooperative{}
+	if err := db.Where("id IN ?", cooperativeIDs).Find(&cooperatives).Error; err != nil {
+		return contacts, fmt.Errorf("reading the cooperatives' contacts: %w", err)
+	}
+	for _, cooperative := range cooperatives {
+		contacts.CooperativeName[cooperative.ID] = cooperative.Name
+		contacts.CooperativePhone[cooperative.ID] = cooperative.Phone
+	}
+
+	return contacts, nil
+}

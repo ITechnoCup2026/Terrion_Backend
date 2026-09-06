@@ -3,9 +3,13 @@ package model
 import "terrion-backend/internal/constants"
 
 type SignupRequest struct {
-	FullName        string `json:"full_name" validate:"required,min=2"`
-	Organisation    string `json:"organisation" validate:"required,min=2"`
-	Email           string `json:"email" validate:"required,email"`
+	FullName     string `json:"full_name" validate:"required,min=2"`
+	Organisation string `json:"organisation" validate:"required,min=2"`
+	Email        string `json:"email" validate:"required,email"`
+	// Nomor WhatsApp. Wajib, karena inilah satu-satunya cara koperasi
+	// membalas permintaan pasokan -- tanpa itu pembeli mengajukan kontrak ke
+	// ruang yang tidak bisa menjawabnya.
+	Phone           string `json:"phone" validate:"required,min=8,max=20"`
 	Password        string `json:"password" validate:"required,min=8"`
 	ConfirmPassword string `json:"confirm_password" validate:"required,eqfield=Password"`
 }
@@ -26,4 +30,5 @@ type UserResponse struct {
 	CooperativeID *string            `json:"cooperative_id"`
 	FullName      string             `json:"full_name"`
 	Organisation  *string            `json:"organisation"`
+	Phone         *string            `json:"phone"`
 }

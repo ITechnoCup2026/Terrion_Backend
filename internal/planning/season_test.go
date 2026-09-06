@@ -63,8 +63,12 @@ func TestCandidatePlantingDatesAreWeekStartsInsideTheWindow(t *testing.T) {
 
 	dates := planning.CandidatePlantingDates(season, now)
 
-	if len(dates) < 10 || len(dates) > 16 {
-		t.Fatalf("len(dates) = %d, want between 10 and 16", len(dates))
+	// Jendela tanam MT I panjangnya ~13 minggu, dan langkahnya dua minggu
+	// (PlantingDateStepDays), jadi sekitar tujuh tanggal. Rentangnya dibiarkan
+	// longgar karena jumlah persisnya bergeser menurut posisi `now` di dalam
+	// jendela; yang diperiksa di sini bentuk tanggalnya, bukan cacahnya.
+	if len(dates) < 5 || len(dates) > 9 {
+		t.Fatalf("len(dates) = %d, want between 5 and 9", len(dates))
 	}
 	for _, date := range dates {
 		if date.Weekday() != time.Monday {
@@ -116,5 +120,29 @@ func TestPreviousSeasonComparesLikeWithLike(t *testing.T) {
 	if got := planning.PreviousSeason(second); got.Label != "MT II 2025" {
 		t.Errorf("planning.PreviousSeason(%q) = %q, mau %q",
 			second.Label, got.Label, "MT II 2025")
+	}
+}
+
+// Kandidat tanam melangkah dua minggu, bukan satu.
+//
+// Setiap tanggal tanam dikalikan jumlah lahan dan jumlah varietas, jadi jarak
+// langkahnya menentukan besar ruang pencarian. Sejak varietas acuan bertambah
+// dari 13 menjadi 42, langkah mingguan membuat ruang itu membengkak sampai
+// melewati batas yang bisa diterima layanan AI maupun yang wajar dihitung
+// solver lokal. Dua minggu memangkasnya separuh; seminggu lebih presisi
+// daripada yang bisa dipegang siapa pun saat menanam.
+func TestCandidatePlantingDatesStepFortnightly(t *testing.T) {
+	now := time.Date(2026, 9, 4, 0, 0, 0, 0, time.UTC)
+
+	dates := planning.CandidatePlantingDates(planning.SeasonMT1(2026), now)
+
+	if len(dates) < 2 {
+		t.Fatalf("len(dates) = %d, butuh minimal 2 untuk memeriksa jaraknya", len(dates))
+	}
+	for i := 1; i < len(dates); i++ {
+		if gap := agronomy.DaysBetween(dates[i-1], dates[i]); gap != 14 {
+			t.Errorf("jarak %s -> %s = %d hari, mau 14",
+				agronomy.ToISODate(dates[i-1]), agronomy.ToISODate(dates[i]), gap)
+		}
 	}
 }

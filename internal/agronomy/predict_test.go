@@ -295,3 +295,43 @@ func TestPredictHarvestStaysARangeWhenBoundsDisagree(t *testing.T) {
 		t.Errorf("End %v is not after Start %v", window.End, window.Start)
 	}
 }
+
+// A crop whose GDD requirement was met while the weather record was still
+// running has a maturity date that is a matter of record, not of projection.
+// The search must report the day the total actually crossed the requirement,
+// not the last day it happens to hold weather for -- otherwise a block planted
+// months ago is dated at the end of the forecast horizon and reads as having
+// taken far longer than the variety ever takes.
+func TestPredictHarvestDatesMaturityWhenItWasReachedNotAtTheEndOfKnownWeather(t *testing.T) {
+	// 14 Gdd/day (mean 24, base 10). Maize needs 1400, so the total clears the
+	// requirement on the 100th day of the series -- index 99, i.e. 99 days
+	// after planting. 180 days of weather are supplied, far past that.
+	window := predictOrFail(t, agronomy.HarvestInput{
+		PlantingDate: planted, Observed: observedDays(planted, 180, 24),
+		Climatology: flatNormals(24, 2), Variety: maize,
+	})
+
+	if got := agronomy.DaysBetween(planted, window.Start); got != 99 {
+		t.Errorf("Start is %d days after planting, want 99 -- the day the total reached 1400", got)
+	}
+	if got := agronomy.DaysBetween(planted, window.End); got != 99 {
+		t.Errorf("End is %d days after planting, want 99", got)
+	}
+}
+
+// The plausibility guard exists to catch a variety whose reference days and
+// whose thermal model disagree. Dating maturity at the end of the weather
+// record instead tripped it on ordinary blocks that were merely planted a
+// while ago, which is the guard crying wolf about its own arithmetic.
+func TestPredictHarvestKeepsAnAlreadyMaturedCropPlausible(t *testing.T) {
+	window := predictOrFail(t, agronomy.HarvestInput{
+		PlantingDate: planted, Observed: observedDays(planted, 180, 24),
+		Climatology: flatNormals(24, 2), Variety: maize,
+	})
+
+	if window.Plausibility != constants.PlausibilityOk {
+		t.Errorf("Plausibility = %q, want %q -- 99 days sits inside maize's %d-%d day range",
+			window.Plausibility, constants.PlausibilityOk,
+			maize.DaysToHarvestMin, maize.DaysToHarvestMax)
+	}
+}

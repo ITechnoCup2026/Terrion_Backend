@@ -51,6 +51,7 @@ func PredictHarvest(input HarvestInput) (HarvestWindow, error) {
 		plantingDate:    input.PlantingDate,
 		projectionStart: projectionStart,
 		accumulated:     gddAccumulated,
+		known:           cumulativeGdd,
 		required:        input.Variety.GddRequirement,
 		variety:         input.Variety,
 		normals:         normalByDayOfYear,
@@ -160,17 +161,27 @@ type maturitySearch struct {
 	plantingDate    time.Time
 	projectionStart time.Time
 	accumulated     float64
-	required        float64
-	variety         Variety
-	normals         map[int]ClimateNormal
+	// known is the running GDD total for every day that actually has weather,
+	// so a crop that matured inside that record can be dated from it rather
+	// than guessed at. Without it the search could only answer "some time at or
+	// before the last day I hold", which is not a harvest date.
+	known    []CumulativeGdd
+	required float64
+	variety  Variety
+	normals  map[int]ClimateNormal
 }
 
 func (search maturitySearch) daysAfterPlanting(z float64) int {
 	total := search.accumulated
 	cursor := search.projectionStart
 
+	// Already past the requirement: the crop matured while the weather record
+	// was still running, so the date is a matter of record. Read it off the
+	// series instead of projecting -- and note that z plays no part, because
+	// the spread it carries describes climate variability in days that have
+	// not happened yet. These ones have.
 	if total >= search.required {
-		return max(0, DaysBetween(search.plantingDate, cursor)-1)
+		return search.dayRequirementWasMet()
 	}
 
 	for range constants.MaxProjectionDays {
@@ -187,6 +198,31 @@ func (search maturitySearch) daysAfterPlanting(z float64) int {
 	}
 
 	return constants.MaxProjectionDays
+}
+
+// dayRequirementWasMet finds the first day in the known-weather series whose
+// running total reached the variety's requirement, as days after planting.
+//
+// The series is ordered by date and its total only ever climbs, so the first
+// day at or above the requirement is the day maturity was reached.
+//
+// The fallback is the answer this whole function replaced: the last day with
+// weather. It stands only for a series carrying a date that will not parse,
+// which is a corrupt row rather than an ordinary case -- better a slightly
+// late date than a failed prediction for the whole block.
+func (search maturitySearch) dayRequirementWasMet() int {
+	for _, day := range search.known {
+		if day.Gdd < search.required {
+			continue
+		}
+		matured, err := UTCDate(day.Date)
+		if err != nil {
+			break
+		}
+		return max(0, DaysBetween(search.plantingDate, matured))
+	}
+
+	return max(0, DaysBetween(search.plantingDate, search.projectionStart)-1)
 }
 
 func basisOf(input HarvestInput, plantedISO string) constants.WindowBasis {

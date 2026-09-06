@@ -20,6 +20,10 @@ func projectionAt(t *testing.T, id, start, end string, tonnes float64) agronomy.
 			End:   mustDate(t, end),
 		},
 		ExpectedTonnes: tonnes,
+		// Bisa digeser, kecuali satu uji yang sengaja menyatakan sebaliknya.
+		// Deteksi tetap menandai minggunya apa pun nilainya; yang bergantung
+		// pada tanda ini hanya saran penggeseran.
+		Shiftable: true,
 	}
 }
 
@@ -147,5 +151,33 @@ func TestDetectCollisionsOfNothingIsEmpty(t *testing.T) {
 
 	if len(report.Weeks) != 0 || len(report.Flagged) != 0 || len(report.Suggestions) != 0 {
 		t.Errorf("report = %+v, want everything empty", report)
+	}
+}
+
+// Minggu yang penuh oleh blok yang sudah ditanam tidak menghasilkan saran.
+//
+// Penggeseran hanya boleh menyentuh tanam yang belum terjadi -- mengubah
+// tanggal tanam padi yang sudah tiga bulan di sawah bukan saran, itu memalsukan
+// catatan. Sebelum ini deteksi tetap menerbitkan saran untuk blok semacam itu,
+// jadi dasbor menawarkan tombol yang satu-satunya tugasnya menjelaskan kenapa
+// ia tidak bisa bekerja.
+func TestDetectCollisionsSuggestsNothingWhenEveryContributorIsAlreadyPlanted(t *testing.T) {
+	planted := func(id, start, end string, tonnes float64) agronomy.BlockProjection {
+		projection := projectionAt(t, id, start, end, tonnes)
+		projection.Shiftable = false
+		return projection
+	}
+
+	report := agronomy.DetectCollisions([]agronomy.BlockProjection{
+		planted("a", "2026-10-12", "2026-10-14", 60),
+		planted("b", "2026-10-15", "2026-10-16", 60),
+	}, map[string]float64{"jagung": 80})
+
+	if len(report.Flagged) == 0 {
+		t.Fatal("len(Flagged) = 0 — minggu ini harus tetap tertandai, hanya sarannya yang hilang")
+	}
+	if len(report.Suggestions) != 0 {
+		t.Errorf("len(Suggestions) = %d, want 0 — tidak ada blok yang boleh digeser",
+			len(report.Suggestions))
 	}
 }

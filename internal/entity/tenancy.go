@@ -17,7 +17,10 @@ type Cooperative struct {
 	Lat            float64         `gorm:"column:lat"`
 	Lng            float64         `gorm:"column:lng"`
 	StaggerApplied json.RawMessage `gorm:"column:stagger_applied;type:jsonb"`
-	CreatedAt      time.Time       `gorm:"column:created_at"`
+	// Phone adalah kontak koperasi, bukan kontak pengurus: kepengurusan
+	// berganti, papan nama koperasi tidak.
+	Phone     *string   `gorm:"column:phone"`
+	CreatedAt time.Time `gorm:"column:created_at"`
 }
 
 func (Cooperative) TableName() string { return "cooperative" }
@@ -28,7 +31,10 @@ type AppUser struct {
 	CooperativeID *string            `gorm:"column:cooperative_id"`
 	FullName      string             `gorm:"column:full_name"`
 	Organisation  *string            `gorm:"column:organisation"`
-	CreatedAt     time.Time          `gorm:"column:created_at"`
+	// Phone dipakai untuk menyusun tautan WhatsApp, bukan untuk autentikasi.
+	// Null pada akun yang dibuat sebelum kolomnya ada.
+	Phone     *string   `gorm:"column:phone"`
+	CreatedAt time.Time `gorm:"column:created_at"`
 }
 
 func (AppUser) TableName() string { return "app_user" }

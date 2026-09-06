@@ -65,3 +65,12 @@ func PlanSplit(blockAreaHa, takenHa float64) (SplitPlan, *SplitRefusal) {
 func (r *SplitRefusal) Error() string {
 	return r.Code
 }
+
+// EditRefusal adalah penolakan menyunting atau menghapus apa yang sudah
+// terdaftar. Kodenya cukup untuk layar menyusun kalimatnya sendiri; tidak ada
+// angka yang perlu ikut, tidak seperti SplitRefusal.
+type EditRefusal struct {
+	Code string
+}
+
+func (r *EditRefusal) Error() string { return r.Code }

@@ -14,6 +14,7 @@ type RouteConfig struct {
 	App                 *fiber.App
 	ServiceName         string
 	AuthController      *http.AuthController
+	CapacityController  *http.CapacityController
 	CatalogController   *http.CatalogController
 	DashboardController *http.DashboardController
 	PlanningController  *http.PlanningController
@@ -58,10 +59,25 @@ func (c *RouteConfig) setupAuthenticatedRoutes() {
 	c.App.Get("/api/plots/:id", auth, c.PlotController.Get)
 	c.App.Post("/api/plots", auth, fieldStaff, c.PlotController.Create)
 	c.App.Post("/api/blocks/:id/split", auth, fieldStaff, c.PlotController.SplitBlock)
+	// Menyunting apa yang berdiri di lahan adalah pekerjaan lapangan, sama
+	// seperti memecah blok. Menghapus seluruh lahan tidak: itu membuang
+	// pendaftaran, dan hanya pengurus yang menanggungnya.
+	c.App.Patch("/api/blocks/:id", auth, fieldStaff, c.PlotController.UpdateBlock)
+	c.App.Delete("/api/plots/:id", auth,
+		middleware.RequireRole(constants.RolePengurus), c.PlotController.DeletePlot)
 	// Recording what came off a field is field work, so it sits with the same
 	// two roles that may split a block -- and it is what feeds the calibration
 	// every projection on this cooperative is then read through.
 	c.App.Patch("/api/blocks/:id/harvest", auth, fieldStaff, c.PlotController.RecordHarvest)
+	// Riwayat panen. Mencatat panen mengeluarkan bloknya dari kanvas; ini
+	// tempat catatannya tetap bisa dibaca sesudahnya.
+	c.App.Get("/api/harvests", auth, c.PlotController.Harvests)
+	// Kapasitas gudang: dibaca siapa pun di koperasi, diubah pengurus saja.
+	// Angka ini adalah ambang deteksi tabrakan, jadi mengubahnya mengubah cara
+	// seluruh koperasi membaca minggunya sendiri.
+	c.App.Get("/api/capacity", auth, c.CapacityController.Get)
+	c.App.Put("/api/capacity", auth,
+		middleware.RequireRole(constants.RolePengurus), c.CapacityController.Put)
 	c.App.Get("/api/rdkk", auth, c.RdkkController.Get)
 	c.App.Post("/api/input-orders", auth,
 		middleware.RequireRole(constants.RolePengurus), c.RdkkController.CreateInputOrder)

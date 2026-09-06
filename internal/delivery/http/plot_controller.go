@@ -2,12 +2,14 @@ package http
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
 	"github.com/sirupsen/logrus"
 
+	"terrion-backend/internal/agronomy"
 	"terrion-backend/internal/constants"
 	"terrion-backend/internal/delivery/http/middleware"
 	"terrion-backend/internal/entity"
@@ -213,4 +215,100 @@ func cooperativeMember(ctx *fiber.Ctx) (*entity.AppUser, error) {
 		return nil, fiber.NewError(fiber.StatusForbidden, "account is not linked to a cooperative")
 	}
 	return user, nil
+}
+
+// UpdateBlock menyunting satu blok yang sedang berdiri.
+func (c *PlotController) UpdateBlock(ctx *fiber.Ctx) error {
+	user := middleware.AuthenticatedUser(ctx)
+	if user == nil {
+		return fiber.NewError(fiber.StatusUnauthorized, "Unauthorised")
+	}
+
+	request := new(model.UpdateBlockRequest)
+	if err := ctx.BodyParser(request); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "malformed request body")
+	}
+
+	if err := c.UseCase.UpdateBlock(
+		ctx.UserContext(), user, ctx.Params("id"), request); err != nil {
+		return c.editFailure(err, "updating the block")
+	}
+
+	return ctx.SendStatus(fiber.StatusNoContent)
+}
+
+// DeletePlot menghapus satu lahan beserta blok-bloknya.
+func (c *PlotController) DeletePlot(ctx *fiber.Ctx) error {
+	user := middleware.AuthenticatedUser(ctx)
+	if user == nil {
+		return fiber.NewError(fiber.StatusUnauthorized, "Unauthorised")
+	}
+
+	if err := c.UseCase.DeletePlot(ctx.UserContext(), user, ctx.Params("id")); err != nil {
+		return c.editFailure(err, "deleting the plot")
+	}
+
+	return ctx.SendStatus(fiber.StatusNoContent)
+}
+
+// editFailure menerjemahkan penolakan menyunting dan menghapus.
+//
+// Semuanya 422: bukan permintaan yang salah bentuk, melainkan keadaan koperasi
+// yang membuat tindakan itu tidak boleh -- dan layar menjelaskannya di tempat,
+// bukan melemparnya ke batas galat.
+func (c *PlotController) editFailure(err error, what string) error {
+	var refusal *plots.EditRefusal
+	if errors.As(err, &refusal) {
+		return fiber.NewError(fiber.StatusUnprocessableEntity, refusal.Code)
+	}
+
+	var validationError validator.ValidationErrors
+	if errors.As(err, &validationError) {
+		return fiber.NewError(fiber.StatusBadRequest, validationError.Error())
+	}
+	if errors.Is(err, usecase.ErrNoCooperative) {
+		return fiber.NewError(fiber.StatusForbidden, "account is not linked to a cooperative")
+	}
+
+	c.Log.Errorf("%s: %v", what, err)
+	return fiber.NewError(fiber.StatusInternalServerError, fmt.Sprintf("failed to %s", what))
+}
+
+// Harvests menjawab riwayat panen koperasi, terbaru dulu.
+func (c *PlotController) Harvests(ctx *fiber.Ctx) error {
+	user := middleware.AuthenticatedUser(ctx)
+	if user == nil {
+		return fiber.NewError(fiber.StatusUnauthorized, "Unauthorised")
+	}
+
+	records, err := c.UseCase.HarvestHistory(ctx.UserContext(), user)
+	if err != nil {
+		return c.editFailure(err, "reading the harvest history")
+	}
+
+	rows := make([]model.HarvestRecordResponse, len(records))
+	for i, record := range records {
+		rows[i] = model.HarvestRecordResponse{
+			BlockID:       record.BlockID,
+			BlockLabel:    record.BlockLabel,
+			PlotID:        record.PlotID,
+			PlotName:      record.PlotName,
+			MemberName:    record.MemberName,
+			CommodityName: record.CommodityName,
+			VarietyName:   record.VarietyName,
+			AreaHa:        record.AreaHa,
+			PlantingDate:  agronomy.ToISODate(record.PlantingDate),
+			HarvestDate:   agronomy.ToISODate(record.HarvestDate),
+			ActualYieldKg: record.ActualYieldKg,
+			PricePerKg:    record.PricePerKg,
+		}
+		if record.PaymentDate != nil {
+			paid := agronomy.ToISODate(*record.PaymentDate)
+			rows[i].PaymentDate = &paid
+		}
+	}
+
+	return ctx.JSON(model.WebResponse[*model.HarvestHistoryResponse]{
+		Data: &model.HarvestHistoryResponse{Records: rows},
+	})
 }

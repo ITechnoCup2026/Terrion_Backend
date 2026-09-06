@@ -147,7 +147,20 @@ func DetectCollisions(projections []BlockProjection, capacity map[string]float64
 }
 
 func relieve(week FlaggedWeek, projections []BlockProjection) (StaggerSuggestion, bool) {
-	contributors := heaviestFirst(projections, week.ContributingBlockIDs)
+	// Hanya blok yang belum ditanam. Menerbitkan saran yang menyentuh tanam
+	// lampau berarti menawarkan tindakan yang pasti ditolak saat diterapkan,
+	// dan dasbor tidak punya cara mengetahui itu sebelum tombolnya ditekan.
+	shiftable := []BlockProjection{}
+	for _, projection := range projections {
+		if projection.Shiftable {
+			shiftable = append(shiftable, projection)
+		}
+	}
+
+	contributors := heaviestFirst(shiftable, week.ContributingBlockIDs)
+	if len(contributors) == 0 {
+		return StaggerSuggestion{}, false
+	}
 
 	var best StaggerSuggestion
 	found := false

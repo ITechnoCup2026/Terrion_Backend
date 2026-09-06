@@ -92,6 +92,10 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 		bootstrapConfig.DB, bootstrapConfig.Log, bootstrapConfig.Validate,
 		supplyRequestRepository, catalogUseCase)
 
+	capacityUseCase := usecase.NewCapacityUseCase(
+		bootstrapConfig.DB, bootstrapConfig.Log, bootstrapConfig.Validate,
+		cooperativeRepository, commodityRepository)
+
 	staggerUseCase := usecase.NewStaggerUseCase(
 		bootstrapConfig.DB, bootstrapConfig.Log, bootstrapConfig.Validate,
 		cooperativeRepository, blockRepository, projectionUseCase)
@@ -128,6 +132,7 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 		authUseCase, bootstrapConfig.Log, bootstrapConfig.Config.App.Env == "production")
 	publicController := http.NewPublicController(
 		publicUseCase, atlasUseCase, bootstrapConfig.Log)
+	capacityController := http.NewCapacityController(capacityUseCase, bootstrapConfig.Log)
 	staggerController := http.NewStaggerController(staggerUseCase, bootstrapConfig.Log)
 	catalogController := http.NewCatalogController(
 		catalogUseCase, supplyRequestUseCase, bootstrapConfig.Log)
@@ -141,6 +146,7 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 		App:                 bootstrapConfig.App,
 		ServiceName:         bootstrapConfig.Config.App.Name,
 		AuthController:      authController,
+		CapacityController:  capacityController,
 		CatalogController:   catalogController,
 		DashboardController: dashboardController,
 		PlanningController:  planningController,

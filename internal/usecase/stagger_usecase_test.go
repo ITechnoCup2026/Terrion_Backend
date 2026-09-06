@@ -242,26 +242,42 @@ func TestApplyStaggerRefusesAMalformedWeek(t *testing.T) {
 	}
 }
 
-func TestApplyStaggerRefusesWhenEveryBlockIsAlreadyPlanted(t *testing.T) {
+// Blok yang sudah ditanam tidak pernah muncul sebagai saran, dan karena itu
+// dasbor tidak menawarkan tombol yang pasti ditolak.
+//
+// Sebelumnya saran tetap diterbitkan dan penolakannya baru datang setelah
+// tombol ditekan, lengkap dengan AlreadyPlanted untuk dijelaskan di layar.
+// Jalur penolakan itu masih ada di Apply sebagai penjaga -- sebuah saran bisa
+// basi antara layar digambar dan tombol ditekan -- tetapi ia bukan lagi
+// keadaan normal yang setiap kali dilihat pengurus.
+func TestDashboardOffersNoStaggerWhenEveryBlockIsAlreadyPlanted(t *testing.T) {
 	db := dashboardFixture(t)
 	seedTightCapacity(t, db, 0.001)
 
-	suggestion := suggestionNaming(t, db, "block-growing")
+	loaded, err := dashboardUseCase(t, db).Load(
+		context.Background(), homeCoop, constants.DefaultHorizonWeeks, projectionNow)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
 
-	_, err := staggerUseCase(t, db).Apply(context.Background(), pengurus(),
+	if len(loaded.Flagged) == 0 {
+		t.Fatal("len(Flagged) = 0 — minggunya harus tetap tertandai; deteksi tidak berubah")
+	}
+	for _, suggestion := range loaded.Suggestions {
+		if slices.Contains(suggestion.BlockIDs, "block-growing") {
+			t.Errorf("saran %+v menyebut block-growing, yang sudah ditanam 60 hari lalu",
+				suggestion)
+		}
+	}
+
+	// Dan bila minggunya tetap dicoba lewat API, tidak ada saran untuk dipakai.
+	_, err = staggerUseCase(t, db).Apply(context.Background(), pengurus(),
 		&model.ApplyStaggerRequest{
-			ISOWeek: suggestion.ISOWeek, CommodityID: suggestion.CommodityID,
+			ISOWeek:     loaded.Flagged[0].ISOWeek,
+			CommodityID: loaded.Flagged[0].CommodityID,
 		}, projectionNow)
-
-	var refusal *StaggerRefusal
-	if !errors.As(err, &refusal) {
-		t.Fatalf("err = %v, want a *StaggerRefusal", err)
-	}
-	if refusal.Code != constants.StaggerNothingToShift {
-		t.Errorf("Code = %q, want %q", refusal.Code, constants.StaggerNothingToShift)
-	}
-	if refusal.AlreadyPlanted == 0 {
-		t.Error("AlreadyPlanted = 0, want the count the screen explains the refusal with")
+	if !errors.Is(err, ErrSuggestionStale) {
+		t.Errorf("err = %v, want ErrSuggestionStale", err)
 	}
 
 	unchanged := new(entity.Block)

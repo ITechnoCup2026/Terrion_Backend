@@ -47,12 +47,32 @@ type SupplyRequestResponse struct {
 	BuyerID           string  `json:"buyer_id"`
 	BuyerName         string  `json:"buyer_name"`
 	BuyerOrganisation *string `json:"buyer_organisation"`
-	CommodityID       string  `json:"commodity_id"`
-	VolumeKg          float64 `json:"volume_kg"`
-	WindowStart       string  `json:"window_start"`
-	WindowEnd         string  `json:"window_end"`
-	Status            string  `json:"status"`
-	Notes             *string `json:"notes"`
-	CreatedAt         string  `json:"created_at"`
-	RespondedAt       *string `json:"responded_at"`
+	// Kontak kedua belah pihak, supaya layar bisa menyusun tautan WhatsApp.
+	// Terrion tidak punya pesan di dalam aplikasi; yang diberikannya adalah
+	// pertemuannya, lalu percakapannya diserahkan ke saluran yang memang sudah
+	// dipakai. Null berarti nomornya belum tercatat -- layar menawarkan pemilih
+	// kontak, bukan tombol mati.
+	BuyerPhone       *string `json:"buyer_phone"`
+	CooperativeName  string  `json:"cooperative_name"`
+	CooperativePhone *string `json:"cooperative_phone"`
+	CommodityID      string  `json:"commodity_id"`
+	VolumeKg         float64 `json:"volume_kg"`
+	WindowStart      string  `json:"window_start"`
+	WindowEnd        string  `json:"window_end"`
+	Status           string  `json:"status"`
+	Notes            *string `json:"notes"`
+	CreatedAt        string  `json:"created_at"`
+	RespondedAt      *string `json:"responded_at"`
+}
+
+// RequestContacts adalah nomor kedua belah pihak, dicari sekali untuk seluruh
+// daftar.
+//
+// Nama pembeli didenormalisasi ke barisnya saat permintaan dibuat; nomor tidak,
+// dan sengaja. Nomor berubah, dan yang tersimpan pada permintaan enam bulan
+// lalu akan menjadi nomor yang sudah tidak dijawab siapa pun.
+type RequestContacts struct {
+	BuyerPhone       map[string]*string
+	CooperativeName  map[string]string
+	CooperativePhone map[string]*string
 }
