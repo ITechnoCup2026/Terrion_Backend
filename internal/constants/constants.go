@@ -23,6 +23,16 @@ const (
 	OrderDraft     OrderStatus = "draft"
 	OrderSubmitted OrderStatus = "submitted"
 	OrderCompleted OrderStatus = "completed"
+	OrderCancelled OrderStatus = "cancelled"
+)
+
+const (
+	OrderNotFound          = "order_not_found"
+	OrderTransitionInvalid = "order_transition_invalid"
+	OrderAlreadyFinal      = "order_already_final"
+	OrderSeasonAlreadyOpen = "order_season_already_open"
+	OrderLineUnknown       = "order_line_unknown"
+	OrderLinesEmpty        = "order_lines_empty"
 )
 
 const MigrationsPath = "db/migrations"

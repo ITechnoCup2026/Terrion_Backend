@@ -25,11 +25,16 @@ type SupplyContractRequest struct {
 func (SupplyContractRequest) TableName() string { return "supply_contract_request" }
 
 type InputOrder struct {
-	ID            string                `gorm:"column:id;primaryKey"`
-	CooperativeID string                `gorm:"column:cooperative_id"`
-	SeasonLabel   string                `gorm:"column:season_label"`
-	Status        constants.OrderStatus `gorm:"column:status;type:order_status"`
-	CreatedAt     time.Time             `gorm:"column:created_at"`
+	ID                  string                `gorm:"column:id;primaryKey"`
+	CooperativeID       string                `gorm:"column:cooperative_id"`
+	SeasonLabel         string                `gorm:"column:season_label"`
+	Status              constants.OrderStatus `gorm:"column:status;type:order_status"`
+	CreatedAt           time.Time             `gorm:"column:created_at"`
+	CreatedByID         *string               `gorm:"column:created_by_id"`
+	CreatedByName       *string               `gorm:"column:created_by_name"`
+	StatusChangedAt     *time.Time            `gorm:"column:status_changed_at"`
+	StatusChangedByID   *string               `gorm:"column:status_changed_by_id"`
+	StatusChangedByName *string               `gorm:"column:status_changed_by_name"`
 }
 
 func (InputOrder) TableName() string { return "input_order" }
@@ -40,6 +45,7 @@ type InputOrderLine struct {
 	Item               string   `gorm:"column:item"`
 	Quantity           float64  `gorm:"column:quantity"`
 	Unit               string   `gorm:"column:unit"`
+	QuantityRdkk       *float64 `gorm:"column:quantity_rdkk"`
 	RetailPricePerUnit *float64 `gorm:"column:retail_price_per_unit"`
 	BulkPricePerUnit   *float64 `gorm:"column:bulk_price_per_unit"`
 }

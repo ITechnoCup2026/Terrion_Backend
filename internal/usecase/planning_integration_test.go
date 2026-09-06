@@ -81,7 +81,7 @@ func seasonRdkk(t *testing.T, db *gorm.DB) *RdkkUseCase {
 	log := logrus.New()
 	log.SetOutput(io.Discard)
 
-	return NewRdkkUseCase(db, log,
+	return NewRdkkUseCase(db, log, validator.New(),
 		&repository.CooperativeRepository{}, &repository.PlotRepository{},
 		&repository.BlockRepository{}, &repository.MemberRepository{},
 		&repository.FertiliserRateRepository{}, &repository.InputOrderRepository{})
@@ -166,7 +166,7 @@ func TestAnAppliedPlanLightsUpTheFeaturesThatWereDark(t *testing.T) {
 		Label: proposal.Season.Label,
 		Start: proposal.Season.Start,
 		End:   proposal.Season.End,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("creating next season's input order: %v", err)
 	}

@@ -3,11 +3,27 @@ package repository
 import (
 	"gorm.io/gorm"
 
+	"terrion-backend/internal/constants"
 	"terrion-backend/internal/entity"
 )
 
 type InputOrderRepository struct {
 	Repository[entity.InputOrder]
+}
+
+func (r *InputOrderRepository) FindOpenBySeason(
+	db *gorm.DB, cooperativeID, seasonLabel string,
+) (*entity.InputOrder, error) {
+	order := new(entity.InputOrder)
+	err := db.Where(
+		"cooperative_id = ? AND season_label = ? AND status IN ?",
+		cooperativeID, seasonLabel,
+		[]constants.OrderStatus{constants.OrderDraft, constants.OrderSubmitted},
+	).Take(order).Error
+	if err != nil {
+		return nil, err
+	}
+	return order, nil
 }
 
 func (r *InputOrderRepository) FindByCooperativeID(

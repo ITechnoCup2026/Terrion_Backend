@@ -17,17 +17,37 @@ func InputOrdersToResponse(orders []usecase.InputOrderWithLines) []model.InputOr
 		for j, line := range order.Lines {
 			lines[j] = model.InputOrderLineResponse{
 				Item: line.Item, Quantity: line.Quantity, Unit: line.Unit,
+				QuantityRdkk: line.QuantityRdkk,
 			}
 		}
+
+		next := rdkk.NextOrderStatuses(order.Order.Status)
+		nextStatuses := make([]string, len(next))
+		for j, status := range next {
+			nextStatuses[j] = string(status)
+		}
+
 		response[i] = model.InputOrderResponse{
-			ID:          order.Order.ID,
-			SeasonLabel: order.Order.SeasonLabel,
-			Status:      string(order.Order.Status),
-			CreatedAt:   order.Order.CreatedAt.UTC().Format(time.RFC3339),
-			Lines:       lines,
+			ID:                  order.Order.ID,
+			SeasonLabel:         order.Order.SeasonLabel,
+			Status:              string(order.Order.Status),
+			CreatedAt:           order.Order.CreatedAt.UTC().Format(time.RFC3339),
+			CreatedByName:       order.Order.CreatedByName,
+			StatusChangedAt:     formatOptionalTime(order.Order.StatusChangedAt),
+			StatusChangedByName: order.Order.StatusChangedByName,
+			NextStatuses:        nextStatuses,
+			Lines:               lines,
 		}
 	}
 	return response
+}
+
+func formatOptionalTime(t *time.Time) *string {
+	if t == nil {
+		return nil
+	}
+	formatted := t.UTC().Format(time.RFC3339)
+	return &formatted
 }
 
 func RdkkToResponse(document rdkk.Document, season usecase.Season) *model.RdkkResponse {

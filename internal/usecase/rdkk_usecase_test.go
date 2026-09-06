@@ -6,12 +6,14 @@ import (
 	"io"
 	"testing"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 
 	"terrion-backend/internal/agronomy"
 	"terrion-backend/internal/constants"
 	"terrion-backend/internal/entity"
+	"terrion-backend/internal/model"
 	"terrion-backend/internal/repository"
 )
 
@@ -21,7 +23,7 @@ func rdkkUseCase(t *testing.T, db *gorm.DB) *RdkkUseCase {
 	log := logrus.New()
 	log.SetOutput(io.Discard)
 
-	return NewRdkkUseCase(db, log,
+	return NewRdkkUseCase(db, log, validator.New(),
 		&repository.CooperativeRepository{}, &repository.PlotRepository{},
 		&repository.BlockRepository{}, &repository.MemberRepository{},
 		&repository.FertiliserRateRepository{}, &repository.InputOrderRepository{})
@@ -45,7 +47,8 @@ func rdkkFixture(t *testing.T) (*gorm.DB, *entity.AppUser) {
 
 	cooperativeID := homeCoop
 	return db, &entity.AppUser{
-		ID: "pengurus-1", Role: constants.RolePengurus, CooperativeID: &cooperativeID,
+		ID: "pengurus-1", FullName: "Budi Santoso",
+		Role: constants.RolePengurus, CooperativeID: &cooperativeID,
 	}
 }
 
@@ -112,7 +115,7 @@ func TestRdkkCreateInputOrderStoresADraftWithNoPrices(t *testing.T) {
 	db, user := rdkkFixture(t)
 
 	created, err := rdkkUseCase(t, db).
-		CreateInputOrder(context.Background(), user, DefaultSeason(projectionNow))
+		CreateInputOrder(context.Background(), user, DefaultSeason(projectionNow), nil)
 	if err != nil {
 		t.Fatalf("CreateInputOrder: %v", err)
 	}
@@ -159,7 +162,7 @@ func TestRdkkCreateInputOrderRefusesWhenThereIsNothingToOrder(t *testing.T) {
 		t.Fatalf("clearing rates: %v", err)
 	}
 
-	_, err := rdkkUseCase(t, db).CreateInputOrder(context.Background(), user, DefaultSeason(projectionNow))
+	_, err := rdkkUseCase(t, db).CreateInputOrder(context.Background(), user, DefaultSeason(projectionNow), nil)
 
 	if !errors.Is(err, ErrNothingToOrder) {
 		t.Errorf("err = %v, want ErrNothingToOrder", err)
@@ -170,7 +173,7 @@ func TestRdkkCreateInputOrderRefusesAnAccountWithNoCooperative(t *testing.T) {
 	db, _ := rdkkFixture(t)
 	buyer := &entity.AppUser{ID: "buyer-1", Role: constants.RoleBuyer}
 
-	_, err := rdkkUseCase(t, db).CreateInputOrder(context.Background(), buyer, DefaultSeason(projectionNow))
+	_, err := rdkkUseCase(t, db).CreateInputOrder(context.Background(), buyer, DefaultSeason(projectionNow), nil)
 
 	if !errors.Is(err, ErrNoCooperative) {
 		t.Errorf("err = %v, want ErrNoCooperative", err)
@@ -181,7 +184,7 @@ func TestRdkkListInputOrdersReturnsTheOrderWithItsLines(t *testing.T) {
 	db, user := rdkkFixture(t)
 	useCase := rdkkUseCase(t, db)
 
-	created, err := useCase.CreateInputOrder(context.Background(), user, DefaultSeason(projectionNow))
+	created, err := useCase.CreateInputOrder(context.Background(), user, DefaultSeason(projectionNow), nil)
 	if err != nil {
 		t.Fatalf("CreateInputOrder: %v", err)
 	}
@@ -208,7 +211,7 @@ func TestRdkkListInputOrdersExcludesAnotherCooperatives(t *testing.T) {
 	db, user := rdkkFixture(t)
 	useCase := rdkkUseCase(t, db)
 
-	if _, err := useCase.CreateInputOrder(context.Background(), user, DefaultSeason(projectionNow)); err != nil {
+	if _, err := useCase.CreateInputOrder(context.Background(), user, DefaultSeason(projectionNow), nil); err != nil {
 		t.Fatalf("CreateInputOrder: %v", err)
 	}
 
@@ -254,7 +257,7 @@ func TestRdkkCreateInputOrderCoversTheSeasonItWasGiven(t *testing.T) {
 		End:   agronomy.AddDays(projectionNow, 210),
 	}
 
-	_, err := rdkkUseCase(t, db).CreateInputOrder(context.Background(), user, nextSeason)
+	_, err := rdkkUseCase(t, db).CreateInputOrder(context.Background(), user, nextSeason, nil)
 	if !errors.Is(err, ErrNothingToOrder) {
 		t.Fatalf("err = %v, want %v before anything is planted for that season", err, ErrNothingToOrder)
 	}
@@ -267,7 +270,7 @@ func TestRdkkCreateInputOrderCoversTheSeasonItWasGiven(t *testing.T) {
 		t.Fatalf("seeding a planned block: %v", err)
 	}
 
-	created, err := rdkkUseCase(t, db).CreateInputOrder(context.Background(), user, nextSeason)
+	created, err := rdkkUseCase(t, db).CreateInputOrder(context.Background(), user, nextSeason, nil)
 	if err != nil {
 		t.Fatalf("CreateInputOrder: %v", err)
 	}
@@ -281,5 +284,281 @@ func TestRdkkCreateInputOrderCoversTheSeasonItWasGiven(t *testing.T) {
 	}
 	if order.SeasonLabel != nextSeason.Label {
 		t.Errorf("SeasonLabel = %q, want %q", order.SeasonLabel, nextSeason.Label)
+	}
+}
+
+func TestRdkkCreateInputOrderRefusesASecondOrderForTheSameSeason(t *testing.T) {
+	db, user := rdkkFixture(t)
+	useCase := rdkkUseCase(t, db)
+	season := DefaultSeason(projectionNow)
+
+	if _, err := useCase.CreateInputOrder(context.Background(), user, season, nil); err != nil {
+		t.Fatalf("CreateInputOrder: %v", err)
+	}
+
+	_, err := useCase.CreateInputOrder(context.Background(), user, season, nil)
+	if !errors.Is(err, ErrOrderSeasonAlreadyOpen) {
+		t.Errorf("err = %v, want ErrOrderSeasonAlreadyOpen", err)
+	}
+}
+
+func TestRdkkCreateInputOrderAllowsANewOrderOnceTheLastIsFinished(t *testing.T) {
+	db, user := rdkkFixture(t)
+	useCase := rdkkUseCase(t, db)
+	season := DefaultSeason(projectionNow)
+
+	first, err := useCase.CreateInputOrder(context.Background(), user, season, nil)
+	if err != nil {
+		t.Fatalf("CreateInputOrder: %v", err)
+	}
+
+	submitted := &model.UpdateInputOrderStatusRequest{Status: constants.OrderSubmitted}
+	if err := useCase.UpdateInputOrderStatus(
+		context.Background(), user, first.OrderID, submitted, projectionNow); err != nil {
+		t.Fatalf("UpdateInputOrderStatus to submitted: %v", err)
+	}
+	completed := &model.UpdateInputOrderStatusRequest{Status: constants.OrderCompleted}
+	if err := useCase.UpdateInputOrderStatus(
+		context.Background(), user, first.OrderID, completed, projectionNow); err != nil {
+		t.Fatalf("UpdateInputOrderStatus to completed: %v", err)
+	}
+
+	if _, err := useCase.CreateInputOrder(context.Background(), user, season, nil); err != nil {
+		t.Errorf("CreateInputOrder after completion: %v, want it allowed", err)
+	}
+}
+
+func TestRdkkCreateInputOrderRecordsWhoMadeIt(t *testing.T) {
+	db, user := rdkkFixture(t)
+
+	created, err := rdkkUseCase(t, db).
+		CreateInputOrder(context.Background(), user, DefaultSeason(projectionNow), nil)
+	if err != nil {
+		t.Fatalf("CreateInputOrder: %v", err)
+	}
+
+	order := new(entity.InputOrder)
+	if err := db.Where("id = ?", created.OrderID).Take(order).Error; err != nil {
+		t.Fatalf("reading back the order: %v", err)
+	}
+	if order.CreatedByID == nil || *order.CreatedByID != user.ID {
+		t.Errorf("CreatedByID = %v, want %q", order.CreatedByID, user.ID)
+	}
+	if order.CreatedByName == nil || *order.CreatedByName != user.FullName {
+		t.Errorf("CreatedByName = %v, want %q", order.CreatedByName, user.FullName)
+	}
+	if order.StatusChangedAt != nil {
+		t.Errorf("StatusChangedAt = %v, want nil until the status actually moves", order.StatusChangedAt)
+	}
+}
+
+func TestRdkkCreateInputOrderKeepsTheRdkkFigureBesideAnAdjustedOne(t *testing.T) {
+	db, user := rdkkFixture(t)
+
+	request := &model.CreateInputOrderRequest{
+		Lines: []model.InputOrderLineRequest{{Item: "urea", Quantity: 6}},
+	}
+	created, err := rdkkUseCase(t, db).
+		CreateInputOrder(context.Background(), user, DefaultSeason(projectionNow), request)
+	if err != nil {
+		t.Fatalf("CreateInputOrder: %v", err)
+	}
+
+	lines := []entity.InputOrderLine{}
+	if err := db.Where("input_order_id = ?", created.OrderID).
+		Order("item").Find(&lines).Error; err != nil {
+		t.Fatalf("reading back the lines: %v", err)
+	}
+
+	var urea, sp36 *entity.InputOrderLine
+	for i := range lines {
+		switch lines[i].Item {
+		case "urea":
+			urea = &lines[i]
+		case "sp36":
+			sp36 = &lines[i]
+		}
+	}
+	if urea == nil || urea.Quantity != 6 || urea.QuantityRdkk == nil || *urea.QuantityRdkk != 10 {
+		t.Errorf("urea line = %+v, want quantity 6 with quantity_rdkk 10", urea)
+	}
+	if sp36 == nil || sp36.Quantity != 4 || sp36.QuantityRdkk != nil {
+		t.Errorf("sp36 line = %+v, want quantity 4 untouched with no quantity_rdkk", sp36)
+	}
+}
+
+func TestRdkkCreateInputOrderDropsALineAdjustedToNothing(t *testing.T) {
+	db, user := rdkkFixture(t)
+
+	request := &model.CreateInputOrderRequest{
+		Lines: []model.InputOrderLineRequest{{Item: "sp36", Quantity: 0}},
+	}
+	created, err := rdkkUseCase(t, db).
+		CreateInputOrder(context.Background(), user, DefaultSeason(projectionNow), request)
+	if err != nil {
+		t.Fatalf("CreateInputOrder: %v", err)
+	}
+	if created.Lines != 1 {
+		t.Errorf("Lines = %d, want 1: sp36 zeroed out should be dropped, not stored as 0", created.Lines)
+	}
+
+	lines := []entity.InputOrderLine{}
+	if err := db.Where("input_order_id = ?", created.OrderID).Find(&lines).Error; err != nil {
+		t.Fatalf("reading back the lines: %v", err)
+	}
+	for _, line := range lines {
+		if line.Item == "sp36" {
+			t.Error("sp36 should have been dropped, not stored as a zero-quantity line")
+		}
+	}
+}
+
+func TestRdkkCreateInputOrderRefusesAnItemTheSeasonNeverAskedFor(t *testing.T) {
+	db, user := rdkkFixture(t)
+
+	request := &model.CreateInputOrderRequest{
+		Lines: []model.InputOrderLineRequest{{Item: "kcl", Quantity: 5}},
+	}
+	_, err := rdkkUseCase(t, db).
+		CreateInputOrder(context.Background(), user, DefaultSeason(projectionNow), request)
+	if !errors.Is(err, ErrOrderLineUnknown) {
+		t.Errorf("err = %v, want ErrOrderLineUnknown", err)
+	}
+}
+
+func TestRdkkCreateInputOrderRefusesAnOrderAdjustedDownToNothing(t *testing.T) {
+	db, user := rdkkFixture(t)
+
+	request := &model.CreateInputOrderRequest{
+		Lines: []model.InputOrderLineRequest{
+			{Item: "urea", Quantity: 0}, {Item: "sp36", Quantity: 0},
+		},
+	}
+	_, err := rdkkUseCase(t, db).
+		CreateInputOrder(context.Background(), user, DefaultSeason(projectionNow), request)
+	if !errors.Is(err, ErrOrderLinesEmpty) {
+		t.Errorf("err = %v, want ErrOrderLinesEmpty", err)
+	}
+}
+
+func TestRdkkCreateInputOrderRefusesANegativeAdjustment(t *testing.T) {
+	db, user := rdkkFixture(t)
+
+	request := &model.CreateInputOrderRequest{
+		Lines: []model.InputOrderLineRequest{{Item: "urea", Quantity: -1}},
+	}
+	_, err := rdkkUseCase(t, db).
+		CreateInputOrder(context.Background(), user, DefaultSeason(projectionNow), request)
+
+	var validationError validator.ValidationErrors
+	if !errors.As(err, &validationError) {
+		t.Errorf("err = %v, want a validation error for a negative quantity", err)
+	}
+}
+
+func TestRdkkUpdateInputOrderStatusRecordsWhoMovedItAndWhen(t *testing.T) {
+	db, user := rdkkFixture(t)
+	useCase := rdkkUseCase(t, db)
+
+	created, err := useCase.CreateInputOrder(context.Background(), user, DefaultSeason(projectionNow), nil)
+	if err != nil {
+		t.Fatalf("CreateInputOrder: %v", err)
+	}
+
+	request := &model.UpdateInputOrderStatusRequest{Status: constants.OrderSubmitted}
+	if err := useCase.UpdateInputOrderStatus(
+		context.Background(), user, created.OrderID, request, projectionNow); err != nil {
+		t.Fatalf("UpdateInputOrderStatus: %v", err)
+	}
+
+	order := new(entity.InputOrder)
+	if err := db.Where("id = ?", created.OrderID).Take(order).Error; err != nil {
+		t.Fatalf("reading back the order: %v", err)
+	}
+	if order.Status != constants.OrderSubmitted {
+		t.Errorf("Status = %q, want %q", order.Status, constants.OrderSubmitted)
+	}
+	if order.StatusChangedByID == nil || *order.StatusChangedByID != user.ID {
+		t.Errorf("StatusChangedByID = %v, want %q", order.StatusChangedByID, user.ID)
+	}
+	if order.StatusChangedByName == nil || *order.StatusChangedByName != user.FullName {
+		t.Errorf("StatusChangedByName = %v, want %q", order.StatusChangedByName, user.FullName)
+	}
+	if order.StatusChangedAt == nil || !order.StatusChangedAt.Equal(projectionNow.UTC()) {
+		t.Errorf("StatusChangedAt = %v, want %v", order.StatusChangedAt, projectionNow.UTC())
+	}
+}
+
+func TestRdkkUpdateInputOrderStatusRefusesSkippingSubmission(t *testing.T) {
+	db, user := rdkkFixture(t)
+	useCase := rdkkUseCase(t, db)
+
+	created, err := useCase.CreateInputOrder(context.Background(), user, DefaultSeason(projectionNow), nil)
+	if err != nil {
+		t.Fatalf("CreateInputOrder: %v", err)
+	}
+
+	request := &model.UpdateInputOrderStatusRequest{Status: constants.OrderCompleted}
+	err = useCase.UpdateInputOrderStatus(context.Background(), user, created.OrderID, request, projectionNow)
+	if !errors.Is(err, ErrOrderTransitionInvalid) {
+		t.Errorf("err = %v, want ErrOrderTransitionInvalid", err)
+	}
+}
+
+func TestRdkkUpdateInputOrderStatusRefusesLeavingAFinishedOrder(t *testing.T) {
+	db, user := rdkkFixture(t)
+	useCase := rdkkUseCase(t, db)
+
+	created, err := useCase.CreateInputOrder(context.Background(), user, DefaultSeason(projectionNow), nil)
+	if err != nil {
+		t.Fatalf("CreateInputOrder: %v", err)
+	}
+
+	cancel := &model.UpdateInputOrderStatusRequest{Status: constants.OrderCancelled}
+	if err := useCase.UpdateInputOrderStatus(
+		context.Background(), user, created.OrderID, cancel, projectionNow); err != nil {
+		t.Fatalf("cancelling the order: %v", err)
+	}
+
+	submit := &model.UpdateInputOrderStatusRequest{Status: constants.OrderSubmitted}
+	err = useCase.UpdateInputOrderStatus(context.Background(), user, created.OrderID, submit, projectionNow)
+	if !errors.Is(err, ErrOrderAlreadyFinal) {
+		t.Errorf("err = %v, want ErrOrderAlreadyFinal", err)
+	}
+}
+
+func TestRdkkUpdateInputOrderStatusRefusesAnotherCooperativesOrder(t *testing.T) {
+	db, user := rdkkFixture(t)
+	useCase := rdkkUseCase(t, db)
+
+	created, err := useCase.CreateInputOrder(context.Background(), user, DefaultSeason(projectionNow), nil)
+	if err != nil {
+		t.Fatalf("CreateInputOrder: %v", err)
+	}
+
+	stranger := otherCoop
+	strangerUser := &entity.AppUser{ID: "pengurus-2", Role: constants.RolePengurus, CooperativeID: &stranger}
+	request := &model.UpdateInputOrderStatusRequest{Status: constants.OrderSubmitted}
+	err = useCase.UpdateInputOrderStatus(context.Background(), strangerUser, created.OrderID, request, projectionNow)
+	if !errors.Is(err, ErrOrderNotFound) {
+		t.Errorf("err = %v, want ErrOrderNotFound", err)
+	}
+}
+
+func TestRdkkUpdateInputOrderStatusRefusesAStatusThatIsNotAStep(t *testing.T) {
+	db, user := rdkkFixture(t)
+	useCase := rdkkUseCase(t, db)
+
+	created, err := useCase.CreateInputOrder(context.Background(), user, DefaultSeason(projectionNow), nil)
+	if err != nil {
+		t.Fatalf("CreateInputOrder: %v", err)
+	}
+
+	request := &model.UpdateInputOrderStatusRequest{Status: constants.OrderDraft}
+	err = useCase.UpdateInputOrderStatus(context.Background(), user, created.OrderID, request, projectionNow)
+
+	var validationError validator.ValidationErrors
+	if !errors.As(err, &validationError) {
+		t.Errorf("err = %v, want a validation error: draft is not in the oneof enum", err)
 	}
 }

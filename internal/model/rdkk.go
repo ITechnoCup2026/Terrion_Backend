@@ -1,5 +1,7 @@
 package model
 
+import "terrion-backend/internal/constants"
+
 type RdkkMetaResponse struct {
 	CooperativeName string `json:"cooperative_name"`
 	Village         string `json:"village"`
@@ -39,15 +41,33 @@ type CreateInputOrderResponse struct {
 }
 
 type InputOrderLineResponse struct {
-	Item     string  `json:"item"`
-	Quantity float64 `json:"quantity"`
-	Unit     string  `json:"unit"`
+	Item         string   `json:"item"`
+	Quantity     float64  `json:"quantity"`
+	Unit         string   `json:"unit"`
+	QuantityRdkk *float64 `json:"quantity_rdkk"`
 }
 
 type InputOrderResponse struct {
-	ID          string                   `json:"id"`
-	SeasonLabel string                   `json:"season_label"`
-	Status      string                   `json:"status"`
-	CreatedAt   string                   `json:"created_at"`
-	Lines       []InputOrderLineResponse `json:"lines"`
+	ID                  string                   `json:"id"`
+	SeasonLabel         string                   `json:"season_label"`
+	Status              string                   `json:"status"`
+	CreatedAt           string                   `json:"created_at"`
+	CreatedByName       *string                  `json:"created_by_name"`
+	StatusChangedAt     *string                  `json:"status_changed_at"`
+	StatusChangedByName *string                  `json:"status_changed_by_name"`
+	NextStatuses        []string                 `json:"next_statuses"`
+	Lines               []InputOrderLineResponse `json:"lines"`
+}
+
+type InputOrderLineRequest struct {
+	Item     string  `json:"item" validate:"required"`
+	Quantity float64 `json:"quantity" validate:"gte=0"`
+}
+
+type CreateInputOrderRequest struct {
+	Lines []InputOrderLineRequest `json:"lines" validate:"dive"`
+}
+
+type UpdateInputOrderStatusRequest struct {
+	Status constants.OrderStatus `json:"status" validate:"required,oneof=submitted completed cancelled"`
 }

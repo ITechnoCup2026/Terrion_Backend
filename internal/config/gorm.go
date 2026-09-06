@@ -31,6 +31,7 @@ func NewDatabase(cfg *Config, log *logrus.Logger) *gorm.DB {
 	dsn := buildDSN(cfg)
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+		TranslateError: true,
 		Logger: logger.New(&logrusWriter{Logger: log}, logger.Config{
 			SlowThreshold:             time.Second * 5,
 			Colorful:                  false,

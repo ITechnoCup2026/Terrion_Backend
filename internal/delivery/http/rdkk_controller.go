@@ -2,8 +2,10 @@ package http
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
 	"github.com/sirupsen/logrus"
 
@@ -57,16 +59,17 @@ func (c *RdkkController) CreateInputOrder(ctx *fiber.Ctx) error {
 		return err
 	}
 
-	created, err := c.UseCase.CreateInputOrder(ctx.UserContext(), user, season)
+	var request *model.CreateInputOrderRequest
+	if len(ctx.Body()) > 0 {
+		request = new(model.CreateInputOrderRequest)
+		if err := ctx.BodyParser(request); err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, "malformed request body")
+		}
+	}
+
+	created, err := c.UseCase.CreateInputOrder(ctx.UserContext(), user, season, request)
 	if err != nil {
-		if errors.Is(err, usecase.ErrNothingToOrder) {
-			return fiber.NewError(fiber.StatusUnprocessableEntity, constants.RdkkNothingToOrder)
-		}
-		if errors.Is(err, usecase.ErrNoCooperative) {
-			return fiber.NewError(fiber.StatusForbidden, "account is not linked to a cooperative")
-		}
-		c.Log.Errorf("creating input order: %v", err)
-		return fiber.NewError(fiber.StatusInternalServerError, "failed to create input order")
+		return c.orderFailure(err, "creating input order")
 	}
 
 	return ctx.Status(fiber.StatusCreated).
@@ -93,6 +96,59 @@ func (c *RdkkController) ListInputOrders(ctx *fiber.Ctx) error {
 	return ctx.JSON(model.WebResponse[[]model.InputOrderResponse]{
 		Data: converter.InputOrdersToResponse(orders),
 	})
+}
+
+func (c *RdkkController) UpdateInputOrderStatus(ctx *fiber.Ctx) error {
+	user := middleware.AuthenticatedUser(ctx)
+	if user == nil {
+		return fiber.NewError(fiber.StatusUnauthorized, "Unauthorised")
+	}
+
+	request := new(model.UpdateInputOrderStatusRequest)
+	if err := ctx.BodyParser(request); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "malformed request body")
+	}
+
+	err := c.UseCase.UpdateInputOrderStatus(
+		ctx.UserContext(), user, ctx.Params("id"), request, time.Now())
+	if err != nil {
+		return c.orderFailure(err, "updating input order status")
+	}
+
+	return ctx.SendStatus(fiber.StatusNoContent)
+}
+
+func (c *RdkkController) orderFailure(err error, what string) error {
+	var validationError validator.ValidationErrors
+	if errors.As(err, &validationError) {
+		return fiber.NewError(fiber.StatusBadRequest, validationError.Error())
+	}
+	if errors.Is(err, usecase.ErrNoCooperative) {
+		return fiber.NewError(fiber.StatusForbidden, "account is not linked to a cooperative")
+	}
+	if errors.Is(err, usecase.ErrNothingToOrder) {
+		return fiber.NewError(fiber.StatusUnprocessableEntity, constants.RdkkNothingToOrder)
+	}
+	if errors.Is(err, usecase.ErrOrderSeasonAlreadyOpen) {
+		return fiber.NewError(fiber.StatusConflict, constants.OrderSeasonAlreadyOpen)
+	}
+	if errors.Is(err, usecase.ErrOrderLineUnknown) {
+		return fiber.NewError(fiber.StatusUnprocessableEntity, constants.OrderLineUnknown)
+	}
+	if errors.Is(err, usecase.ErrOrderLinesEmpty) {
+		return fiber.NewError(fiber.StatusUnprocessableEntity, constants.OrderLinesEmpty)
+	}
+	if errors.Is(err, usecase.ErrOrderNotFound) {
+		return fiber.NewError(fiber.StatusNotFound, constants.OrderNotFound)
+	}
+	if errors.Is(err, usecase.ErrOrderTransitionInvalid) {
+		return fiber.NewError(fiber.StatusConflict, constants.OrderTransitionInvalid)
+	}
+	if errors.Is(err, usecase.ErrOrderAlreadyFinal) {
+		return fiber.NewError(fiber.StatusConflict, constants.OrderAlreadyFinal)
+	}
+	c.Log.Errorf("%s: %v", what, err)
+	return fiber.NewError(fiber.StatusInternalServerError, fmt.Sprintf("failed to %s", what))
 }
 
 func seasonFromQuery(ctx *fiber.Ctx) (usecase.Season, error) {
