@@ -43,7 +43,9 @@ func main() {
 		&repository.MemberRepository{}, &repository.CommodityRepository{},
 		&repository.VarietyRepository{}, &repository.CooperativeRepository{},
 		&repository.ReferencePriceRepository{}, &repository.SupplyRequestRepository{},
-		&repository.SeasonPlanRepository{}, &repository.FertiliserRateRepository{}, projection, weatherUseCase, nil, nil, nil)
+		&repository.SeasonPlanRepository{}, &repository.FertiliserRateRepository{},
+		&repository.PlanShareTokenRepository{},
+		projection, weatherUseCase, nil, nil, nil)
 
 	proposal, err := planner.Propose(
 		context.Background(), *cooperativeID, *seasonLabel, *goal, timeNow())

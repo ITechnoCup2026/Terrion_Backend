@@ -44,6 +44,7 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 	supplyRequestRepository := &repository.SupplyRequestRepository{}
 	publicPlotRepository := &repository.PublicPlotRepository{}
 	seasonPlanRepository := &repository.SeasonPlanRepository{}
+	planShareTokenRepository := &repository.PlanShareTokenRepository{}
 
 	goTrue := supabase.NewClient(
 		bootstrapConfig.Config.Supabase.URL,
@@ -110,6 +111,7 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 		plotRepository, blockRepository, memberRepository, commodityRepository,
 		varietyRepository, cooperativeRepository, referencePriceRepository,
 		supplyRequestRepository, seasonPlanRepository, fertiliserRateRepository,
+		planShareTokenRepository,
 		projectionUseCase, weatherUseCase, catalogUseCase, aiPlanner, bootstrapConfig.Redis)
 
 	publicUseCase := usecase.NewPublicUseCase(

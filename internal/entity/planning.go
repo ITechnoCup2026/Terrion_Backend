@@ -40,3 +40,14 @@ type SeasonPlanItem struct {
 }
 
 func (SeasonPlanItem) TableName() string { return "season_plan_item" }
+
+type PlanShareToken struct {
+	ID            string     `gorm:"column:id;primaryKey"`
+	PlanID        string     `gorm:"column:plan_id;uniqueIndex:plan_share_token_plan_member_idx"`
+	MemberID      string     `gorm:"column:member_id;uniqueIndex:plan_share_token_plan_member_idx"`
+	CreatedAt     time.Time  `gorm:"column:created_at"`
+	FirstViewedAt *time.Time `gorm:"column:first_viewed_at"`
+	LastViewedAt  *time.Time `gorm:"column:last_viewed_at"`
+}
+
+func (PlanShareToken) TableName() string { return "plan_share_token" }

@@ -33,7 +33,7 @@ func planningDB(t *testing.T) *gorm.DB {
 		&entity.Cooperative{}, &entity.CooperativeCapacity{}, &entity.Member{},
 		&entity.Commodity{}, &entity.ReferencePrice{}, &entity.SupplyContractRequest{},
 		&entity.AppUser{}, &entity.SeasonPlan{}, &entity.SeasonPlanItem{},
-		&entity.FertiliserRate{},
+		&entity.FertiliserRate{}, &entity.PlanShareToken{},
 	); err != nil {
 		t.Fatalf("migrating planning tables: %v", err)
 	}
@@ -56,7 +56,9 @@ func planningUseCase(t *testing.T, db *gorm.DB) *PlanningUseCase {
 		&repository.MemberRepository{}, &repository.CommodityRepository{},
 		&repository.VarietyRepository{}, &repository.CooperativeRepository{},
 		&repository.ReferencePriceRepository{}, &repository.SupplyRequestRepository{},
-		&repository.SeasonPlanRepository{}, &repository.FertiliserRateRepository{}, projection, weatherUseCase, nil, nil, nil)
+		&repository.SeasonPlanRepository{}, &repository.FertiliserRateRepository{},
+		&repository.PlanShareTokenRepository{},
+		projection, weatherUseCase, nil, nil, nil)
 }
 
 func seedPlanningFixture(t *testing.T) *gorm.DB {
