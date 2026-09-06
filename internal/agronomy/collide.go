@@ -77,6 +77,45 @@ func BucketByWeek(projections []BlockProjection) []WeekBucket {
 	return weeks
 }
 
+// CommodityThreshold adalah ambang puncak mingguan satu komoditas beserta
+// asal angkanya. Ia sudah dihitung di dalam DetectCollisions sejak awal, tetapi
+// hanya menempel pada minggu yang tertandai — padahal rencana yang TIDAK
+// menandai apa pun juga perlu menyatakan ia diukur terhadap apa.
+type CommodityThreshold struct {
+	CommodityID   string
+	TonnesPerWeek float64
+	Basis         constants.ThresholdBasis
+}
+
+// ThresholdsFor melaporkan ambang tiap komoditas yang muncul di proyeksi,
+// tertandai atau tidak, terurut menurut komoditas supaya keluarannya stabil.
+func ThresholdsFor(
+	projections []BlockProjection, capacity map[string]float64,
+) []CommodityThreshold {
+	weeks := BucketByWeek(projections)
+
+	seen := map[string]bool{}
+	commodities := []string{}
+	for _, week := range weeks {
+		if !seen[week.CommodityID] {
+			seen[week.CommodityID] = true
+			commodities = append(commodities, week.CommodityID)
+		}
+	}
+	sort.Strings(commodities)
+
+	thresholds := make([]CommodityThreshold, 0, len(commodities))
+	for _, commodityID := range commodities {
+		tonnes, basis := thresholdFor(weeks, capacity, commodityID)
+		thresholds = append(thresholds, CommodityThreshold{
+			CommodityID:   commodityID,
+			TonnesPerWeek: tonnes,
+			Basis:         basis,
+		})
+	}
+	return thresholds
+}
+
 func DetectCollisions(projections []BlockProjection, capacity map[string]float64) CollisionReport {
 	if len(projections) == 0 {
 		return CollisionReport{}

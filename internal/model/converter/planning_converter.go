@@ -8,6 +8,7 @@ import (
 	"terrion-backend/internal/entity"
 	"terrion-backend/internal/model"
 	"terrion-backend/internal/planning"
+	"terrion-backend/internal/rdkk"
 	"terrion-backend/internal/usecase"
 )
 
@@ -15,6 +16,8 @@ func ProposalToResponse(proposal usecase.Proposal) *model.ProposalResponse {
 	response := &model.ProposalResponse{
 		Season:            seasonToResponse(proposal.Season),
 		Basis:             string(constants.BasisClimatology),
+		Limits:            constants.PlanClimateDisclaimer,
+		PreviousSeason:    previousSeasonToResponse(proposal.PreviousSeason),
 		Engine:            string(proposal.Engine),
 		YieldObservations: proposal.YieldObservations,
 		Plans:             make([]model.CandidatePlanResponse, len(proposal.Plans)),
@@ -47,7 +50,7 @@ func seasonToResponse(season planning.Season) model.SeasonResponse {
 	}
 }
 
-func candidatePlanToResponse(plan planning.Plan) model.CandidatePlanResponse {
+func candidatePlanToResponse(plan usecase.ProposedPlan) model.CandidatePlanResponse {
 	converted := model.CandidatePlanResponse{
 		Objective: string(plan.Objective),
 		Narrative: plan.Narrative,
@@ -60,6 +63,17 @@ func candidatePlanToResponse(plan planning.Plan) model.CandidatePlanResponse {
 			FlaggedWeeks:       len(plan.Flagged),
 		},
 		Assignments: make([]model.PlanAssignmentResponse, len(plan.Assignments)),
+
+		Thresholds: thresholdsToResponse(plan.Thresholds),
+		Flagged:    flaggedToResponse(plan.Flagged),
+
+		Fertiliser:        fertiliserToResponse(plan.Fertiliser.Totals),
+		FertiliserUnrated: plan.Fertiliser.CommoditiesWithoutRates,
+		OverSubsidyCap:    overSubsidyCapToResponse(plan.Fertiliser.Members),
+	}
+
+	if converted.FertiliserUnrated == nil {
+		converted.FertiliserUnrated = []string{}
 	}
 
 	for i, assignment := range plan.Assignments {
@@ -139,4 +153,76 @@ func planToResponse(plan entity.SeasonPlan) *model.SeasonPlanResponse {
 		response.CancelledAt = &cancelled
 	}
 	return response
+}
+
+func thresholdsToResponse(
+	thresholds []agronomy.CommodityThreshold,
+) []model.CommodityThresholdResponse {
+	converted := make([]model.CommodityThresholdResponse, len(thresholds))
+	for i, threshold := range thresholds {
+		converted[i] = model.CommodityThresholdResponse{
+			CommodityID:   threshold.CommodityID,
+			TonnesPerWeek: threshold.TonnesPerWeek,
+			Basis:         string(threshold.Basis),
+		}
+	}
+	return converted
+}
+
+func flaggedToResponse(flagged []agronomy.FlaggedWeek) []model.PlanFlaggedWeekResponse {
+	converted := make([]model.PlanFlaggedWeekResponse, len(flagged))
+	for i, week := range flagged {
+		converted[i] = model.PlanFlaggedWeekResponse{
+			ISOWeek:         week.ISOWeek,
+			CommodityID:     week.CommodityID,
+			Tonnes:          week.Tonnes,
+			ThresholdTonnes: week.Threshold,
+			Basis:           string(week.Basis),
+		}
+	}
+	return converted
+}
+
+func fertiliserToResponse(lines []rdkk.RequirementLine) []model.FertiliserLineResponse {
+	converted := make([]model.FertiliserLineResponse, len(lines))
+	for i, line := range lines {
+		converted[i] = model.FertiliserLineResponse{
+			InputItem:  line.InputItem,
+			QuantityKg: line.QuantityKg,
+			Sources:    line.Sources,
+		}
+	}
+	return converted
+}
+
+// Hanya anggota yang benar-benar melewati batas yang muncul. Daftar kosong
+// berarti tidak ada yang melewati, bukan bahwa batasnya tidak diperiksa.
+func overSubsidyCapToResponse(
+	members []rdkk.MemberRequirement,
+) []model.OverSubsidyCapResponse {
+	converted := []model.OverSubsidyCapResponse{}
+	for _, member := range members {
+		if !member.OverSubsidyCap {
+			continue
+		}
+		converted = append(converted, model.OverSubsidyCapResponse{
+			MemberID:   member.MemberID,
+			MemberName: member.MemberName,
+			PlantedHa:  member.PlantedHa,
+			ExcessHa:   member.ExcessHa,
+		})
+	}
+	return converted
+}
+
+func previousSeasonToResponse(summary *planning.SeasonSummary) *model.PreviousSeasonResponse {
+	if summary == nil {
+		return nil
+	}
+	return &model.PreviousSeasonResponse{
+		Label:       summary.Label,
+		PeakTonnes:  summary.PeakTonnes,
+		TotalTonnes: summary.TotalTonnes,
+		Blocks:      summary.Blocks,
+	}
 }

@@ -33,6 +33,7 @@ func planningDB(t *testing.T) *gorm.DB {
 		&entity.Cooperative{}, &entity.CooperativeCapacity{}, &entity.Member{},
 		&entity.Commodity{}, &entity.ReferencePrice{}, &entity.SupplyContractRequest{},
 		&entity.AppUser{}, &entity.SeasonPlan{}, &entity.SeasonPlanItem{},
+		&entity.FertiliserRate{},
 	); err != nil {
 		t.Fatalf("migrating planning tables: %v", err)
 	}
@@ -55,7 +56,7 @@ func planningUseCase(t *testing.T, db *gorm.DB) *PlanningUseCase {
 		&repository.MemberRepository{}, &repository.CommodityRepository{},
 		&repository.VarietyRepository{}, &repository.CooperativeRepository{},
 		&repository.ReferencePriceRepository{}, &repository.SupplyRequestRepository{},
-		&repository.SeasonPlanRepository{}, projection, weatherUseCase, nil, nil, nil)
+		&repository.SeasonPlanRepository{}, &repository.FertiliserRateRepository{}, projection, weatherUseCase, nil, nil, nil)
 }
 
 func seedPlanningFixture(t *testing.T) *gorm.DB {
@@ -103,7 +104,7 @@ func TestProposeReturnsThreePlansCoveringEveryFreePlot(t *testing.T) {
 	db := seedPlanningFixture(t)
 
 	proposal, err := planningUseCase(t, db).
-		Propose(context.Background(), homeCoop, planSeason, planningNow)
+		Propose(context.Background(), homeCoop, planSeason, "", planningNow)
 	if err != nil {
 		t.Fatalf("Propose: %v", err)
 	}
@@ -125,7 +126,7 @@ func TestProposeNeverPlantsBeforeToday(t *testing.T) {
 	db := seedPlanningFixture(t)
 
 	proposal, err := planningUseCase(t, db).
-		Propose(context.Background(), homeCoop, planSeason, planningNow)
+		Propose(context.Background(), homeCoop, planSeason, "", planningNow)
 	if err != nil {
 		t.Fatalf("Propose: %v", err)
 	}
@@ -154,7 +155,7 @@ func TestProposeSkipsAPlotStillCarryingACrop(t *testing.T) {
 	}
 
 	proposal, err := planningUseCase(t, db).
-		Propose(context.Background(), homeCoop, planSeason, planningNow)
+		Propose(context.Background(), homeCoop, planSeason, "", planningNow)
 	if err != nil {
 		t.Fatalf("Propose: %v", err)
 	}
@@ -176,7 +177,7 @@ func TestProposeRefusesWhenTheCooperativeHasNoPlots(t *testing.T) {
 	seedProjectionWeather(t, db, homeCell)
 
 	_, err := planningUseCase(t, db).
-		Propose(context.Background(), homeCoop, planSeason, planningNow)
+		Propose(context.Background(), homeCoop, planSeason, "", planningNow)
 
 	refusal := new(PlanRefusal)
 	if !errors.As(err, &refusal) || refusal.Code != constants.PlanNoPlots {
@@ -191,7 +192,7 @@ func TestProposeRefusesWithoutClimateNormals(t *testing.T) {
 	}
 
 	_, err := planningUseCase(t, db).
-		Propose(context.Background(), homeCoop, planSeason, planningNow)
+		Propose(context.Background(), homeCoop, planSeason, "", planningNow)
 
 	refusal := new(PlanRefusal)
 	if !errors.As(err, &refusal) || refusal.Code != constants.PlanNoClimateNormals {
@@ -203,7 +204,7 @@ func TestProposeRefusesASeasonWhosePlantingWindowClosed(t *testing.T) {
 	db := seedPlanningFixture(t)
 
 	_, err := planningUseCase(t, db).
-		Propose(context.Background(), homeCoop, "MT I 2019/2020", planningNow)
+		Propose(context.Background(), homeCoop, "MT I 2019/2020", "", planningNow)
 
 	refusal := new(PlanRefusal)
 	if !errors.As(err, &refusal) || refusal.Code != constants.PlanSeasonClosed {
@@ -215,11 +216,11 @@ func TestProposeIsDeterministic(t *testing.T) {
 	db := seedPlanningFixture(t)
 	useCase := planningUseCase(t, db)
 
-	first, err := useCase.Propose(context.Background(), homeCoop, planSeason, planningNow)
+	first, err := useCase.Propose(context.Background(), homeCoop, planSeason, "", planningNow)
 	if err != nil {
 		t.Fatalf("first Propose: %v", err)
 	}
-	second, err := useCase.Propose(context.Background(), homeCoop, planSeason, planningNow)
+	second, err := useCase.Propose(context.Background(), homeCoop, planSeason, "", planningNow)
 	if err != nil {
 		t.Fatalf("second Propose: %v", err)
 	}
@@ -274,7 +275,7 @@ func TestApplyCreatesBlocksMarkedWithThePlan(t *testing.T) {
 	user := planningManager(t, db)
 	useCase := planningUseCase(t, db)
 
-	proposal, err := useCase.Propose(context.Background(), homeCoop, planSeason, planningNow)
+	proposal, err := useCase.Propose(context.Background(), homeCoop, planSeason, "", planningNow)
 	if err != nil {
 		t.Fatalf("Propose: %v", err)
 	}
@@ -324,7 +325,7 @@ func TestApplyRejectsAPlotFromAnotherCooperative(t *testing.T) {
 	user := planningManager(t, db)
 	useCase := planningUseCase(t, db)
 
-	proposal, err := useCase.Propose(context.Background(), homeCoop, planSeason, planningNow)
+	proposal, err := useCase.Propose(context.Background(), homeCoop, planSeason, "", planningNow)
 	if err != nil {
 		t.Fatalf("Propose: %v", err)
 	}
@@ -345,7 +346,7 @@ func TestApplyRejectsAPlantingDateInThePast(t *testing.T) {
 	user := planningManager(t, db)
 	useCase := planningUseCase(t, db)
 
-	proposal, err := useCase.Propose(context.Background(), homeCoop, planSeason, planningNow)
+	proposal, err := useCase.Propose(context.Background(), homeCoop, planSeason, "", planningNow)
 	if err != nil {
 		t.Fatalf("Propose: %v", err)
 	}
@@ -367,7 +368,7 @@ func TestApplyRecomputesTonnageInsteadOfTrustingTheClient(t *testing.T) {
 	user := planningManager(t, db)
 	useCase := planningUseCase(t, db)
 
-	proposal, err := useCase.Propose(context.Background(), homeCoop, planSeason, planningNow)
+	proposal, err := useCase.Propose(context.Background(), homeCoop, planSeason, "", planningNow)
 	if err != nil {
 		t.Fatalf("Propose: %v", err)
 	}
@@ -401,7 +402,7 @@ func TestApplyTwiceForTheSameSeasonRefuses(t *testing.T) {
 	user := planningManager(t, db)
 	useCase := planningUseCase(t, db)
 
-	proposal, err := useCase.Propose(context.Background(), homeCoop, planSeason, planningNow)
+	proposal, err := useCase.Propose(context.Background(), homeCoop, planSeason, "", planningNow)
 	if err != nil {
 		t.Fatalf("Propose: %v", err)
 	}
@@ -426,7 +427,7 @@ func applyFirstPlan(t *testing.T, db *gorm.DB) (*PlanningUseCase, *entity.AppUse
 	user := planningManager(t, db)
 	useCase := planningUseCase(t, db)
 
-	proposal, err := useCase.Propose(context.Background(), homeCoop, planSeason, planningNow)
+	proposal, err := useCase.Propose(context.Background(), homeCoop, planSeason, "", planningNow)
 	if err != nil {
 		t.Fatalf("Propose: %v", err)
 	}

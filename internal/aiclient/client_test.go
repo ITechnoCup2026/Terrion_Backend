@@ -180,3 +180,23 @@ func TestFingerprintIgnoresTheRequestID(t *testing.T) {
 		t.Error("seed berbeda seharusnya menghasilkan sidik jari berbeda")
 	}
 }
+
+func TestFingerprintSeparatesTwoGoals(t *testing.T) {
+	// Tujuan menggeser bobot solver, jadi ia menggeser rencana. Dua tujuan
+	// berbeda yang berbagi satu entri cache berarti pengurus kedua membaca
+	// rencana yang dipesan pengurus pertama.
+	tanpa := contohPermintaan()
+
+	aman := contohPermintaan()
+	aman.Goal = "jangan sampai menumpuk di satu minggu"
+
+	pasar := contohPermintaan()
+	pasar.Goal = "utamakan permintaan pabrik"
+
+	if Fingerprint(aman) == Fingerprint(pasar) {
+		t.Error("dua tujuan berbeda berbagi satu sidik jari cache")
+	}
+	if Fingerprint(tanpa) == Fingerprint(aman) {
+		t.Error("permintaan bertujuan memakai sidik jari yang sama dengan yang tanpa tujuan")
+	}
+}

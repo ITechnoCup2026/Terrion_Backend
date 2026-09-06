@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
@@ -22,6 +24,7 @@ import (
 	"terrion-backend/internal/model"
 	"terrion-backend/internal/planning"
 	"terrion-backend/internal/plots"
+	"terrion-backend/internal/rdkk"
 	"terrion-backend/internal/repository"
 	"terrion-backend/internal/weather"
 )
@@ -43,9 +46,20 @@ type SkippedPlot struct {
 	Reason     string
 }
 
+// ProposedPlan adalah rencana apa adanya dari optimizer, ditambah kebutuhan
+// pupuk yang menyertainya. Perhitungan pupuknya tinggal di sini dan bukan di
+// paket planning supaya paket itu tetap tidak tahu-menahu soal RDKK.
+type ProposedPlan struct {
+	planning.Plan
+	Fertiliser rdkk.Aggregate
+}
+
 type Proposal struct {
-	Season            planning.Season
-	Plans             []planning.Plan
+	Season planning.Season
+	// Musim sejenis setahun lalu, atau nil kalau koperasi ini belum punya
+	// riwayatnya. nil berarti "belum ada pembandingnya", bukan "nol ton".
+	PreviousSeason    *planning.SeasonSummary
+	Plans             []ProposedPlan
 	Skipped           []SkippedPlot
 	YieldObservations int
 	Engine            constants.PlanEngine
@@ -64,6 +78,7 @@ type PlanningUseCase struct {
 	ReferencePriceRepository *repository.ReferencePriceRepository
 	SupplyRequestRepository  *repository.SupplyRequestRepository
 	SeasonPlanRepository     *repository.SeasonPlanRepository
+	FertiliserRateRepository *repository.FertiliserRateRepository
 	Projection               *ProjectionUseCase
 	Weather                  *WeatherUseCase
 	Catalog                  *CatalogUseCase
@@ -82,6 +97,7 @@ func NewPlanningUseCase(
 	referencePriceRepository *repository.ReferencePriceRepository,
 	supplyRequestRepository *repository.SupplyRequestRepository,
 	seasonPlanRepository *repository.SeasonPlanRepository,
+	fertiliserRateRepository *repository.FertiliserRateRepository,
 	projection *ProjectionUseCase, weatherUseCase *WeatherUseCase,
 	catalog *CatalogUseCase, ai *aiclient.Client, cache *redis.Client,
 ) *PlanningUseCase {
@@ -98,6 +114,7 @@ func NewPlanningUseCase(
 		ReferencePriceRepository: referencePriceRepository,
 		SupplyRequestRepository:  supplyRequestRepository,
 		SeasonPlanRepository:     seasonPlanRepository,
+		FertiliserRateRepository: fertiliserRateRepository,
 		Projection:               projection,
 		Weather:                  weatherUseCase,
 		Catalog:                  catalog,
@@ -106,9 +123,20 @@ func NewPlanningUseCase(
 	}
 }
 
+// Propose menyusun tiga rencana calon untuk satu musim.
+//
+// `goal` adalah kalimat bebas pengurus ("musim depan jangan menumpuk", "utamakan
+// pabrik yang tahun lalu kami tolak"). Ia diteruskan apa adanya ke layanan AI,
+// yang menerjemahkannya menjadi bobot solver — dan tidak pernah menjadi angka.
+// Kosong berarti bobot bawaan dan nol panggilan model.
 func (u *PlanningUseCase) Propose(
-	ctx context.Context, cooperativeID, seasonLabel string, now time.Time,
+	ctx context.Context, cooperativeID, seasonLabel, goal string, now time.Time,
 ) (Proposal, error) {
+	goal, err := trimmedGoal(goal)
+	if err != nil {
+		return Proposal{}, err
+	}
+
 	season, open := planning.SeasonByLabel(seasonLabel, now)
 	if !open {
 		return Proposal{}, &PlanRefusal{Code: constants.PlanSeasonClosed}
@@ -176,15 +204,80 @@ func (u *PlanningUseCase) Propose(
 		Demand:     demand,
 		Capacity:   capacity,
 	}
-	plans, engine := u.solve(ctx, input, season, now)
+	plans, engine := u.solve(ctx, input, season, goal, now)
+
+	proposed, err := u.withFertiliser(ctx, plans)
+	if err != nil {
+		return Proposal{}, err
+	}
+
+	previous := planning.PreviousSeason(season)
 
 	return Proposal{
-		Season:            season,
-		Plans:             plans,
+		Season: season,
+		PreviousSeason: planning.SummariseSeason(
+			projection.Projections, previous, previous.Label),
+		Plans:             proposed,
 		Skipped:           skipped,
 		YieldObservations: projection.Yield.NObservations,
 		Engine:            engine,
 	}, nil
+}
+
+// withFertiliser melengkapi tiap rencana dengan kebutuhan pupuknya.
+//
+// Inilah yang membuat janji "RDKK terbit sebelum musim" berdiri: angka pupuk
+// dan penandaan batas subsidi 2 ha dihitung dari rencana, bukan menunggu
+// benihnya masuk tanah. Tarifnya dibaca sekali untuk ketiga rencana — ia sama
+// untuk semuanya, dan tiga kueri yang identik hanya membebani anggaran waktu.
+func (u *PlanningUseCase) withFertiliser(
+	ctx context.Context, plans []planning.Plan,
+) ([]ProposedPlan, error) {
+	rates, err := u.fertiliserRates(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	proposed := make([]ProposedPlan, len(plans))
+	for i, plan := range plans {
+		planted := make([]rdkk.PlantedBlock, len(plan.Assignments))
+		for j, assignment := range plan.Assignments {
+			planted[j] = rdkk.PlantedBlock{
+				BlockID:     assignment.PlotID,
+				MemberID:    assignment.MemberID,
+				MemberName:  assignment.MemberName,
+				CommodityID: assignment.CommodityID,
+				AreaHa:      assignment.AreaHa,
+			}
+		}
+		proposed[i] = ProposedPlan{
+			Plan:       plan,
+			Fertiliser: rdkk.AggregateInputs(planted, rates),
+		}
+	}
+	return proposed, nil
+}
+
+func (u *PlanningUseCase) fertiliserRates(ctx context.Context) ([]rdkk.FertiliserRate, error) {
+	if u.FertiliserRateRepository == nil {
+		return nil, nil
+	}
+
+	rows, err := u.FertiliserRateRepository.FindAll(u.DB.WithContext(ctx))
+	if err != nil {
+		return nil, fmt.Errorf("reading fertiliser rates: %w", err)
+	}
+
+	rates := make([]rdkk.FertiliserRate, len(rows))
+	for i, row := range rows {
+		rates[i] = rdkk.FertiliserRate{
+			CommodityID: row.CommodityID,
+			InputItem:   row.InputItem,
+			KgPerHa:     row.KgPerHa,
+			Source:      row.Source,
+		}
+	}
+	return rates, nil
 }
 
 func (u *PlanningUseCase) normalsFor(
@@ -891,14 +984,29 @@ func (u *PlanningUseCase) catalogueNames(
 	return commodityNames, varietyNames, nil
 }
 
+// trimmedGoal merapikan tujuan pengurus, atau menolaknya kalau kepanjangan.
+//
+// Batasnya ditegakkan di sini, bukan dibiarkan menjadi penolakan kontrak dari
+// layanan AI:
+// satu kalimat kepanjangan tidak boleh membuat pengurus kehilangan seluruh
+// rencananya. Panjangnya dihitung dalam aksara, sama seperti kontrak Python.
+func trimmedGoal(goal string) (string, error) {
+	goal = strings.TrimSpace(goal)
+	if utf8.RuneCountInString(goal) > constants.PlanGoalMaxChars {
+		return "", &PlanRefusal{Code: constants.PlanGoalTooLong}
+	}
+	return goal, nil
+}
+
 func (u *PlanningUseCase) solve(
-	ctx context.Context, input planning.Input, season planning.Season, now time.Time,
+	ctx context.Context, input planning.Input, season planning.Season,
+	goal string, now time.Time,
 ) ([]planning.Plan, constants.PlanEngine) {
 	if u.AI == nil {
 		return planning.Search(input), constants.PlanEngineFallback
 	}
 
-	plans, err := u.askAIService(ctx, input, season, now)
+	plans, err := u.askAIService(ctx, input, season, goal, now)
 	if err == nil {
 		return plans, constants.PlanEngineAIService
 	}
@@ -910,9 +1018,10 @@ func (u *PlanningUseCase) solve(
 }
 
 func (u *PlanningUseCase) askAIService(
-	ctx context.Context, input planning.Input, season planning.Season, now time.Time,
+	ctx context.Context, input planning.Input, season planning.Season,
+	goal string, now time.Time,
 ) ([]planning.Plan, error) {
-	request, options := buildAIRequest(input, season, now)
+	request, options := buildAIRequest(input, season, goal, now)
 	if len(options) == 0 {
 		return nil, fmt.Errorf("tidak ada kandidat untuk dikirim ke layanan AI")
 	}
@@ -932,7 +1041,7 @@ func (u *PlanningUseCase) askAIService(
 }
 
 func buildAIRequest(
-	input planning.Input, season planning.Season, now time.Time,
+	input planning.Input, season planning.Season, goal string, now time.Time,
 ) (aiclient.Request, map[string]planning.Assignment) {
 	table := aiclient.NewRefTable()
 	options := map[string]planning.Assignment{}
@@ -987,6 +1096,7 @@ func buildAIRequest(
 		CapacityTonnesPerWeek: soleCapacity(input.Capacity),
 		Candidates:            candidates,
 		Demand:                demand,
+		Goal:                  goal,
 	}, options
 }
 
@@ -1018,12 +1128,13 @@ func translateAIPlans(
 				result.Objective)
 		}
 
+		projections := planning.Projections(assignments)
 		plans = append(plans, planning.Plan{
 			Objective:   constants.PlanningObjective(result.Objective),
 			Assignments: assignments,
 			Metrics:     planning.Measure(assignments, input.PricePerKg, input.Demand),
-			Flagged: agronomy.DetectCollisions(
-				planning.Projections(assignments), input.Capacity).Flagged,
+			Flagged:     agronomy.DetectCollisions(projections, input.Capacity).Flagged,
+			Thresholds:  agronomy.ThresholdsFor(projections, input.Capacity),
 			Evaluations: response.Diagnostics.Evaluations,
 			Narrative:   result.Narrative,
 		})

@@ -109,7 +109,7 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 		bootstrapConfig.DB, bootstrapConfig.Log, bootstrapConfig.Validate,
 		plotRepository, blockRepository, memberRepository, commodityRepository,
 		varietyRepository, cooperativeRepository, referencePriceRepository,
-		supplyRequestRepository, seasonPlanRepository,
+		supplyRequestRepository, seasonPlanRepository, fertiliserRateRepository,
 		projectionUseCase, weatherUseCase, catalogUseCase, aiPlanner, bootstrapConfig.Redis)
 
 	publicUseCase := usecase.NewPublicUseCase(

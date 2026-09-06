@@ -104,3 +104,17 @@ func TestSeasonByLabelRoundTrips(t *testing.T) {
 		t.Error("SeasonByLabel accepted a label that does not exist")
 	}
 }
+
+func TestPreviousSeasonComparesLikeWithLike(t *testing.T) {
+	first := planning.SeasonMT1(2026)
+	if got := planning.PreviousSeason(first); got.Label != "MT I 2025/2026" {
+		t.Errorf("planning.PreviousSeason(%q) = %q, mau %q — MT I harus dibanding MT I",
+			first.Label, got.Label, "MT I 2025/2026")
+	}
+
+	second := planning.SeasonMT2(2026)
+	if got := planning.PreviousSeason(second); got.Label != "MT II 2025" {
+		t.Errorf("planning.PreviousSeason(%q) = %q, mau %q",
+			second.Label, got.Label, "MT II 2025")
+	}
+}

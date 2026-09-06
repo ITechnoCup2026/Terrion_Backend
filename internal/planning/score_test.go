@@ -123,3 +123,54 @@ func TestMeasureCapsCoveredDemandAtWhatWasAsked(t *testing.T) {
 		t.Errorf("DemandCoveredKg = %v, want 3000", metrics.DemandCoveredKg)
 	}
 }
+
+func TestSummariseSeasonIsNilWhenThereIsNothingToCompareWith(t *testing.T) {
+	season := planning.SeasonMT1(2026)
+
+	if got := planning.SummariseSeason(nil, season, season.Label); got != nil {
+		t.Errorf("planning.SummariseSeason(kosong) = %+v, mau nil — koperasi tanpa riwayat "+
+			"tidak punya pembanding, dan 0 ton adalah jawaban yang salah", got)
+	}
+
+	elsewhere := []agronomy.BlockProjection{{
+		BlockID: "b1", PlotID: "p1", CommodityID: "k1",
+		Window: agronomy.DateRange{
+			Start: time.Date(2020, time.May, 1, 0, 0, 0, 0, time.UTC),
+			End:   time.Date(2020, time.May, 8, 0, 0, 0, 0, time.UTC),
+		},
+		ExpectedTonnes: 4,
+	}}
+	if got := planning.SummariseSeason(elsewhere, season, season.Label); got != nil {
+		t.Errorf("panen di luar musim ikut terhitung: %+v", got)
+	}
+}
+
+func TestSummariseSeasonReportsThePeakAndTheTotal(t *testing.T) {
+	season := planning.SeasonMT1(2026)
+	week := func(day int, tonnes float64) agronomy.BlockProjection {
+		start := time.Date(2027, time.February, day, 0, 0, 0, 0, time.UTC)
+		return agronomy.BlockProjection{
+			BlockID: "b" + string(rune('0'+day)), PlotID: "p1", CommodityID: "k1",
+			Window:         agronomy.DateRange{Start: start, End: start},
+			ExpectedTonnes: tonnes,
+		}
+	}
+
+	summary := planning.SummariseSeason(
+		[]agronomy.BlockProjection{week(1, 3), week(2, 4), week(9, 5)},
+		season, season.Label)
+
+	if summary == nil {
+		t.Fatal("SummariseSeason = nil, mau ringkasan")
+	}
+	if summary.TotalTonnes != 12 {
+		t.Errorf("TotalTonnes = %v, mau 12", summary.TotalTonnes)
+	}
+	// 1 dan 2 Februari 2027 jatuh di minggu ISO yang sama, 9 Februari tidak.
+	if summary.PeakTonnes != 7 {
+		t.Errorf("PeakTonnes = %v, mau 7 (3+4 di minggu yang sama)", summary.PeakTonnes)
+	}
+	if summary.Blocks != 3 {
+		t.Errorf("Blocks = %d, mau 3", summary.Blocks)
+	}
+}
