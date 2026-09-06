@@ -20,6 +20,7 @@ import (
 func main() {
 	cooperativeID := flag.String("cooperative", "", "cooperative id")
 	seasonLabel := flag.String("season", "", "season label, e.g. \"MT I 2026/2027\"")
+	goal := flag.String("goal", "", "tujuan pengurus dalam bahasa bebas, e.g. \"jangan menumpuk di satu minggu\"")
 	flag.Parse()
 
 	if *cooperativeID == "" || *seasonLabel == "" {
@@ -42,10 +43,10 @@ func main() {
 		&repository.MemberRepository{}, &repository.CommodityRepository{},
 		&repository.VarietyRepository{}, &repository.CooperativeRepository{},
 		&repository.ReferencePriceRepository{}, &repository.SupplyRequestRepository{},
-		&repository.SeasonPlanRepository{}, projection, weatherUseCase, nil, nil, nil)
+		&repository.SeasonPlanRepository{}, &repository.FertiliserRateRepository{}, projection, weatherUseCase, nil, nil, nil)
 
 	proposal, err := planner.Propose(
-		context.Background(), *cooperativeID, *seasonLabel, timeNow())
+		context.Background(), *cooperativeID, *seasonLabel, *goal, timeNow())
 	if err != nil {
 		log.Fatalf("proposing a plan: %v", err)
 	}
@@ -77,7 +78,7 @@ func report(proposal usecase.Proposal) {
 		fmt.Printf("  Permintaan ditutup: %.0f kg\n", plan.Metrics.DemandCoveredKg)
 		fmt.Printf("  Minggu tertandai : %d\n", len(plan.Flagged))
 		fmt.Printf("  Evaluasi         : %d\n", plan.Evaluations)
-		printAssignments(plan)
+		printAssignments(plan.Plan)
 		fmt.Println()
 	}
 }

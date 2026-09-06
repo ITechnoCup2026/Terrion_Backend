@@ -117,7 +117,7 @@ func TestAnAppliedPlanLightsUpTheFeaturesThatWereDark(t *testing.T) {
 		t.Fatalf("Flagged = %d before planting anything, want 0", len(before.Flagged))
 	}
 
-	proposal, err := planner.Propose(context.Background(), homeCoop, planSeason, planningNow)
+	proposal, err := planner.Propose(context.Background(), homeCoop, planSeason, "", planningNow)
 	if err != nil {
 		t.Fatalf("Propose: %v", err)
 	}

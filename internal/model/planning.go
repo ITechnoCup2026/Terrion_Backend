@@ -12,6 +12,15 @@ type ApplySeasonPlanRequest struct {
 	Assignments []SeasonPlanAssignmentRequest `json:"assignments" validate:"required,min=1,dive"`
 }
 
+// PreviousSeasonResponse adalah pembanding "musim lalu" pada kartu rencana.
+// null berarti koperasi belum punya musim pembanding — bukan nol ton.
+type PreviousSeasonResponse struct {
+	Label       string  `json:"label"`
+	PeakTonnes  float64 `json:"peak_tonnes"`
+	TotalTonnes float64 `json:"total_tonnes"`
+	Blocks      int     `json:"blocks"`
+}
+
 type SeasonResponse struct {
 	Label        string `json:"label"`
 	Start        string `json:"start"`
@@ -47,11 +56,50 @@ type PlanMetricsResponse struct {
 	FlaggedWeeks       int      `json:"flagged_weeks"`
 }
 
+// CommodityThresholdResponse menjawab "puncak ini dibandingkan terhadap apa?".
+type CommodityThresholdResponse struct {
+	CommodityID   string  `json:"commodity_id"`
+	TonnesPerWeek float64 `json:"tonnes_per_week"`
+	Basis         string  `json:"basis"`
+}
+
+type PlanFlaggedWeekResponse struct {
+	ISOWeek         string  `json:"iso_week"`
+	CommodityID     string  `json:"commodity_id"`
+	Tonnes          float64 `json:"tonnes"`
+	ThresholdTonnes float64 `json:"threshold_tonnes"`
+	Basis           string  `json:"basis"`
+}
+
+type FertiliserLineResponse struct {
+	InputItem  string   `json:"input_item"`
+	QuantityKg float64  `json:"quantity_kg"`
+	Sources    []string `json:"sources"`
+}
+
+// OverSubsidyCapResponse menandai anggota yang garapannya melewati batas 2 ha.
+// Ia ditandai, tidak pernah dipotong diam-diam: yang memutuskan adalah pengurus.
+type OverSubsidyCapResponse struct {
+	MemberID   string  `json:"member_id"`
+	MemberName string  `json:"member_name"`
+	PlantedHa  float64 `json:"planted_ha"`
+	ExcessHa   float64 `json:"excess_ha"`
+}
+
 type CandidatePlanResponse struct {
 	Objective   string                   `json:"objective"`
 	Narrative   string                   `json:"narrative"`
 	Metrics     PlanMetricsResponse      `json:"metrics"`
 	Assignments []PlanAssignmentResponse `json:"assignments"`
+
+	Thresholds []CommodityThresholdResponse `json:"thresholds"`
+	Flagged    []PlanFlaggedWeekResponse    `json:"flagged"`
+
+	Fertiliser []FertiliserLineResponse `json:"fertiliser"`
+	// Komoditas yang belum punya tarif pupuk. Dinyatakan, bukan dihitung nol:
+	// "belum ada angkanya" dan "butuh nol kg" adalah dua hal berbeda.
+	FertiliserUnrated []string                 `json:"fertiliser_unrated"`
+	OverSubsidyCap    []OverSubsidyCapResponse `json:"over_subsidy_cap"`
 }
 
 type SkippedPlotResponse struct {
@@ -66,6 +114,8 @@ type ProposalResponse struct {
 	Basis             string                  `json:"basis"`
 	Engine            string                  `json:"engine"`
 	YieldObservations int                     `json:"yield_observations"`
+	Limits            string                  `json:"limits"`
+	PreviousSeason    *PreviousSeasonResponse `json:"previous_season"`
 	Plans             []CandidatePlanResponse `json:"plans"`
 	Skipped           []SkippedPlotResponse   `json:"skipped"`
 	Evaluations       int                     `json:"evaluations"`

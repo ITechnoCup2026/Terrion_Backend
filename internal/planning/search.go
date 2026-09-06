@@ -29,6 +29,10 @@ type Plan struct {
 	Assignments []Assignment
 	Metrics     Metrics
 	Flagged     []agronomy.FlaggedWeek
+	// Ambang tiap komoditas beserta asalnya, ditemani Flagged. Rencana yang
+	// tidak menandai satu minggu pun tetap harus menyatakan ia diukur
+	// terhadap apa: kapasitas yang dinyatakan koperasi, atau 2,5 x median.
+	Thresholds  []agronomy.CommodityThreshold
 	Evaluations int
 	Narrative   string
 }
@@ -218,12 +222,13 @@ func Search(input Input) []Plan {
 		improved, more := improve(input, spec, limits, seed)
 		evaluations += more
 
+		projections := Projections(improved)
 		plans = append(plans, Plan{
 			Objective:   spec.name,
 			Assignments: improved,
 			Metrics:     Measure(improved, input.PricePerKg, input.Demand),
-			Flagged: agronomy.DetectCollisions(
-				Projections(improved), input.Capacity).Flagged,
+			Flagged:     agronomy.DetectCollisions(projections, input.Capacity).Flagged,
+			Thresholds:  agronomy.ThresholdsFor(projections, input.Capacity),
 		})
 	}
 

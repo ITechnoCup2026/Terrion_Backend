@@ -9,6 +9,12 @@ type Request struct {
 	CapacityTonnesPerWeek *float64    `json:"capacity_tonnes_per_week"`
 	Candidates            []Candidate `json:"candidates"`
 	Demand                []DemandRow `json:"demand"`
+
+	// Goal adalah kalimat tujuan pengurus apa adanya. Ia hanya menggeser bobot
+	// solver di sisi layanan AI dan tidak pernah menjadi angka yang dibaca
+	// siapa pun. Kosong berarti kunci ini tidak ikut terkirim, jadi sidik jari
+	// cache permintaan tanpa tujuan tetap sama seperti sebelum kolom ini ada.
+	Goal string `json:"goal,omitempty"`
 }
 
 type Season struct {

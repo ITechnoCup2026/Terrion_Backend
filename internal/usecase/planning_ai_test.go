@@ -60,7 +60,7 @@ func TestProposeUsesTheAIServiceWhenItAnswers(t *testing.T) {
 	useCase := planningUseCase(t, db)
 	useCase.AI = aiclient.NewClient(server.URL, "token-uji", 2*time.Second)
 
-	proposal, err := useCase.Propose(context.Background(), homeCoop, planSeason, planningNow)
+	proposal, err := useCase.Propose(context.Background(), homeCoop, planSeason, "", planningNow)
 	if err != nil {
 		t.Fatalf("Propose: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestProposeFallsBackWhenTheAIServiceIsDown(t *testing.T) {
 	useCase := planningUseCase(t, db)
 	useCase.AI = aiclient.NewClient(server.URL, "token-uji", 200*time.Millisecond)
 
-	proposal, err := useCase.Propose(context.Background(), homeCoop, planSeason, planningNow)
+	proposal, err := useCase.Propose(context.Background(), homeCoop, planSeason, "", planningNow)
 	if err != nil {
 		t.Fatalf("Propose harus tetap berhasil saat layanan AI mati: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestProposeWithoutAnAIServiceBehavesExactlyAsBefore(t *testing.T) {
 	useCase := planningUseCase(t, db)
 	useCase.AI = nil
 
-	proposal, err := useCase.Propose(context.Background(), homeCoop, planSeason, planningNow)
+	proposal, err := useCase.Propose(context.Background(), homeCoop, planSeason, "", planningNow)
 	if err != nil {
 		t.Fatalf("Propose: %v", err)
 	}
@@ -141,7 +141,7 @@ func TestProposeIgnoresCandidateIDsTheAIServiceInvented(t *testing.T) {
 	useCase := planningUseCase(t, db)
 	useCase.AI = aiclient.NewClient(server.URL, "token-uji", 2*time.Second)
 
-	proposal, err := useCase.Propose(context.Background(), homeCoop, planSeason, planningNow)
+	proposal, err := useCase.Propose(context.Background(), homeCoop, planSeason, "", planningNow)
 	if err != nil {
 		t.Fatalf("Propose: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestProposeNeverTrustsMetricsFromTheAIService(t *testing.T) {
 	useCase := planningUseCase(t, db)
 	useCase.AI = aiclient.NewClient(server.URL, "token-uji", 2*time.Second)
 
-	proposal, err := useCase.Propose(context.Background(), homeCoop, planSeason, planningNow)
+	proposal, err := useCase.Propose(context.Background(), homeCoop, planSeason, "", planningNow)
 	if err != nil {
 		t.Fatalf("Propose: %v", err)
 	}
@@ -202,7 +202,7 @@ func TestProposeSendsNoPersonalDataToTheAIService(t *testing.T) {
 	useCase.AI = aiclient.NewClient(server.URL, "token-uji", 2*time.Second)
 
 	if _, err := useCase.Propose(
-		context.Background(), homeCoop, planSeason, planningNow); err != nil {
+		context.Background(), homeCoop, planSeason, "", planningNow); err != nil {
 		t.Fatalf("Propose: %v", err)
 	}
 

@@ -84,3 +84,15 @@ func CandidatePlantingDates(season Season, now time.Time) []time.Time {
 	}
 	return dates
 }
+
+// PreviousSeason adalah musim sejenis setahun sebelumnya — MT I dibandingkan
+// dengan MT I, bukan dengan MT II. Membandingkan musim yang berbeda jenis
+// berarti membandingkan komoditas dan cuaca yang berbeda, dan angkanya
+// menyesatkan justru pada hal yang paling ingin diketahui pengurus.
+func PreviousSeason(season Season) Season {
+	year := season.Start.Year()
+	if season.Start.Month() == time.October {
+		return SeasonMT1(year - 1)
+	}
+	return SeasonMT2(year - 1)
+}

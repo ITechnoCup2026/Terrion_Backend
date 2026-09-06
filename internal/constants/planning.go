@@ -25,9 +25,23 @@ const (
 	PlanNotFound             = "plan_not_found"
 	PlanAssignmentRejected   = "plan_assignment_rejected"
 	PlanPartiallyCancellable = "plan_partially_cancellable"
+	PlanGoalTooLong          = "plan_goal_too_long"
 )
 
 const (
 	PlanningLocalSearchPasses = 3
 	PlanningEvaluationBudget  = 200000
 )
+
+// PlanGoalMaxChars adalah batas panjang tujuan bahasa bebas dari pengurus,
+// disamakan dengan MAX_GOAL_CHARS pada kontrak layanan AI. Batas itu
+// ditegakkan di sini supaya kalimat kepanjangan ditolak sebagai tujuan yang
+// terlalu panjang, bukan sebagai permintaan rencana yang gagal.
+const PlanGoalMaxChars = 500
+
+// PlanClimateDisclaimer adalah satu baris yang wajib ikut setiap proposal.
+// Jendela panen rencana dihitung dari normal iklim, bukan dari ramalan cuaca —
+// karena cuaca musim depan memang belum terjadi. Kalimatnya tetap dan tidak
+// bergantung data, jadi ia tinggal di sini dan bukan dirangkai di setiap tempat.
+const PlanClimateDisclaimer = "Rencana ini dihitung dari iklim rata-rata " +
+	"sepuluh tahun. Cuaca musim depan belum terjadi."

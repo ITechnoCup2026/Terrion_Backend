@@ -36,8 +36,10 @@ func (c *PlanningController) Propose(ctx *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "season is required")
 	}
 
+	// Tujuan bahasa bebas pengurus, opsional. Kosong berarti bobot bawaan —
+	// dan nol panggilan model di sisi layanan AI.
 	proposal, err := c.UseCase.Propose(
-		ctx.UserContext(), *user.CooperativeID, seasonLabel, time.Now())
+		ctx.UserContext(), *user.CooperativeID, seasonLabel, ctx.Query("goal"), time.Now())
 	if err != nil {
 		return c.failure(ctx, "proposing a plan", err)
 	}

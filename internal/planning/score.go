@@ -123,3 +123,50 @@ func demandCoveredOf(assignments []Assignment, demand []Demand) float64 {
 	}
 	return covered
 }
+
+// SeasonSummary meringkas satu musim yang sudah lewat, untuk dibandingkan
+// dengan rencana musim depan.
+type SeasonSummary struct {
+	Label       string
+	PeakTonnes  float64
+	TotalTonnes float64
+	Blocks      int
+}
+
+// SummariseSeason meringkas proyeksi yang panennya jatuh di dalam satu musim.
+//
+// Mengembalikan nil kalau musim itu tidak memuat panen sama sekali. Itu
+// disengaja dan bukan kemalasan: koperasi yang baru berjalan satu musim tidak
+// punya pembanding, dan menampilkan "0 ton" untuk itu adalah kebohongan yang
+// persis dilarang aturan R6.
+func SummariseSeason(
+	projections []agronomy.BlockProjection, season Season, label string,
+) *SeasonSummary {
+	inSeason := []agronomy.BlockProjection{}
+	blocks := map[string]bool{}
+
+	for _, projection := range projections {
+		if projection.Window.Start.After(season.End) ||
+			projection.Window.End.Before(season.Start) {
+			continue
+		}
+		inSeason = append(inSeason, projection)
+		blocks[projection.BlockID] = true
+	}
+
+	if len(inSeason) == 0 {
+		return nil
+	}
+
+	total := 0.0
+	for _, projection := range inSeason {
+		total += projection.ExpectedTonnes
+	}
+
+	return &SeasonSummary{
+		Label:       label,
+		PeakTonnes:  peakOf(inSeason),
+		TotalTonnes: total,
+		Blocks:      len(blocks),
+	}
+}
