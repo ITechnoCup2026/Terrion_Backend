@@ -79,7 +79,7 @@ func Bootstrap(bootstrapConfig *BootstrapConfig) {
 		referencePriceRepository, inputOrderRepository, projectionUseCase)
 
 	rdkkUseCase := usecase.NewRdkkUseCase(
-		bootstrapConfig.DB, bootstrapConfig.Log,
+		bootstrapConfig.DB, bootstrapConfig.Log, bootstrapConfig.Validate,
 		cooperativeRepository, plotRepository, blockRepository, memberRepository,
 		fertiliserRateRepository, inputOrderRepository)
 

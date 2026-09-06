@@ -66,6 +66,8 @@ func (c *RouteConfig) setupAuthenticatedRoutes() {
 	c.App.Post("/api/input-orders", auth,
 		middleware.RequireRole(constants.RolePengurus), c.RdkkController.CreateInputOrder)
 	c.App.Get("/api/input-orders", auth, c.RdkkController.ListInputOrders)
+	c.App.Patch("/api/input-orders/:id", auth,
+		middleware.RequireRole(constants.RolePengurus), c.RdkkController.UpdateInputOrderStatus)
 	c.App.Get("/api/supply-requests", auth, c.CatalogController.ListRequests)
 	c.App.Post("/api/supply-requests", auth,
 		middleware.RequireRole(constants.RoleBuyer), c.CatalogController.CreateRequest)
